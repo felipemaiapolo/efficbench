@@ -26,30 +26,55 @@ def get_seen_unseen_items(scenarios_choosen, scenarios, number_item, subscenario
 
     return seen_items, unseen_items
 
-def select_initial_adaptive_items(A, B, Theta, number_item, try_size=2000, seed=42):
+def select_initial_adaptive_items(A, B, Theta, number_item, simu_ann=True, try_size=1000, seed=42):
     random.seed(seed)
+    np.random.seed(seed)
     mats = np.stack([np.outer(A[0, :, i], A[0, :, i]) for i in range(A.shape[2])])
-    samples = [random.sample(range(A.shape[-1]), number_item) for _ in range(try_size)]
-    samples_infos = np.stack([np.linalg.det(np.array([(p * (1 - p))[:, None, None] * mats[s] for p in item_curve(Theta, A[:, :, s], B[:, :, s])]).sum(axis=1)).sum() for s in samples])
-    seen_items = samples[np.argmax(samples_infos)]
+    
+    if simu_ann:
+        sample = random.sample(range(A.shape[-1]), number_item)
+        def L(sample):
+            return -np.log(np.stack([np.linalg.det(np.array([(p * (1 - p))[:, None, None] * mats[s] for p in item_curve(Theta, A[:, :, s], B[:, :, s])]).sum(axis=1)).sum() for s in [sample]]))[0]
+        def temp(t,cte=1):
+            return(cte/t)
+        for i in range(1, try_size):
+            beta=-1/temp(i)
+            potential_samples = [x for x in list(range(number_item)) if x not in sample]
+            sample_c = sample.copy()
+            sample_c[random.sample(range(len(sample)),1)[0]] = random.sample(potential_samples,1)[0]
+            a=min(1,np.exp(beta*(L(sample_c)-L(sample))))
+            if np.random.uniform()<a: sample = sample_c
+            else: sample = sample
+        seen_items = sample
+        
+    else:
+        samples = [random.sample(range(A.shape[-1]), number_item) for _ in range(try_size)]
+        samples_infos = np.stack([np.linalg.det(np.array([(p * (1 - p))[:, None, None] * mats[s] for p in item_curve(Theta, A[:, :, s], B[:, :, s])]).sum(axis=1)).sum() for s in samples])
+        seen_items = samples[np.argmax(samples_infos)]
+    
+    
     unseen_items = [i for i in range(A.shape[-1]) if i not in seen_items]
     return seen_items, unseen_items, mats
 
-
+import time
 def run_adaptive_selection(responses_test, seen_items, unseen_items, scenarios_choosen, scenarios_position, A, B, mats, target_count, balance=False):
     
     assert len(seen_items) <= target_count
     count = len(seen_items)
-
+    optimal_theta = None
+    
     while True:
         for scenario in scenarios_choosen:
             if count >= target_count:
                 return seen_items, unseen_items 
             
-            seen_items, unseen_items = select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance)
+            #start_time = time.time()
+            seen_items, unseen_items, optimal_theta = select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance, optimal_theta)
             count += 1
+            optimal_theta = None #optimal_theta.squeeze() #
+            #print(f"Time for 'select_next_adaptive_item': {time.time() - start_time:.6f}s /// Completed {100*count/target_count:.2f}%")
 
-def select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance):
+def select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance, old_theta=None):
     
     D = A.shape[1]
 
@@ -58,7 +83,7 @@ def select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario
     else:
         unseen_items_scenario = unseen_items
 
-    optimal_theta = estimate_ability_parameters(responses_test, seen_items, A, B)
+    optimal_theta = estimate_ability_parameters(responses_test, seen_items, A, B, theta_init=old_theta)
     P = item_curve(optimal_theta, A, B).squeeze()
 
     # Compute information matrices for seen and unseen items
@@ -70,7 +95,8 @@ def select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario
     seen_items.append(next_item)
     unseen_items.remove(next_item)
 
-    return seen_items, unseen_items
+    return seen_items, unseen_items, optimal_theta
+
 
              
 def anchor(A, B, Theta, number_item):
