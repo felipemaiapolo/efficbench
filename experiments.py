@@ -124,7 +124,8 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios, scenarios, set_of_
             errors.append(np.mean(errors2[-1]))
 
         # Choose the simplest model (D) that is not far from the best model based on validation errors
-        D = Ds[np.argmax(np.array(errors)-np.min(errors)<.005)] 
+        #D = Ds[np.argmax(np.array(errors)-np.min(errors)<.005)] 
+        D = Ds[np.argmin(errors)] 
         print("\nD", D, errors, "\n")
 
         # Choosing lambdas (For random G-PIRT)
