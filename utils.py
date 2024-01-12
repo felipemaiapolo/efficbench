@@ -1,9 +1,45 @@
-import numpy as np
+#import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 import sys
 import os
+import autograd.numpy as np
+from autograd import grad
+from tqdm import tqdm
 
+def get_lambda(number_item, b, v):
+    return (number_item*b**2)/(v+(number_item*b**2))
+
+def debias_irt(A, B, Theta, responses_train, max_iter=500, lr=100000, alpha=0.5, beta=0.9):
+    E_initial = np.hstack((A,B))
+    
+    def neg_log_like(E, Theta=Theta, shape=E_initial.shape, responses_train=responses_train, eps=1e-20):
+        E = E.reshape(shape)
+        A, B = E[:, :-1, :], E[:, -1, :]
+        P = item_curve(Theta, A, B).squeeze()
+        log_likelihood = np.mean(responses_train * np.log(P + eps) + (1 - responses_train) * np.log(1 - P + eps))
+        return -log_likelihood
+
+    gradient = grad(neg_log_like)
+    E = E_initial.copy()
+
+    for it in tqdm(range(max_iter)):
+        current_E = E.copy()
+        grad_E = gradient(E.reshape(-1)).reshape(E.shape)
+        initial_descent = -alpha * np.sum(grad_E**2)
+
+        # Backtracking line search
+        while neg_log_like(E - lr * grad_E) > neg_log_like(current_E) + lr * initial_descent:
+            lr *= beta
+
+        # Gradient update
+        E -= lr * grad_E
+
+        #if it % 50 == 0:
+        #    print(neg_log_like(E))
+
+    A, B = E[:, :-1, :], E[:, -1, :].reshape(1,1,-1)
+    return A, B
 
 class SuppressPrints:
     
@@ -144,22 +180,63 @@ def create_space_accs_results(accs, results, row_to_hide, number_items, chosen_s
     for number_item in number_items:
         accs[row_to_hide][number_item] = {
             'random_naive': {},
+            'random_cirt': {},
             'random_pirt': {},
             'random_gpirt': {},
+            'anchor_naive': {},
+            'anchor_cirt': {},
+            'anchor_pirt': {},
+            'anchor_gpirt': {},
+            'anchor-irt_naive': {},
+            'anchor-irt_cirt': {},
+            'anchor-irt_pirt': {},
+            'anchor-irt_gpirt': {},
+            'disc_naive': {},
+            'disc_cirt': {},
+            'disc_pirt': {},
+            'disc_gpirt': {}
         }
+        
+        
         results[row_to_hide][number_item] = {
             'random_naive': {},
+            'random_cirt': {},
             'random_pirt': {},
             'random_gpirt': {},
+            'anchor_naive': {},
+            'anchor_cirt': {},
+            'anchor_pirt': {},
+            'anchor_gpirt': {},
+            'anchor-irt_naive': {},
+            'anchor-irt_cirt': {},
+            'anchor-irt_pirt': {},
+            'anchor-irt_gpirt': {},
+            'disc_naive': {},
+            'disc_cirt': {},
+            'disc_pirt': {},
+            'disc_gpirt': {}
         }
 
         for scenario in chosen_scenarios:
             accs[row_to_hide][number_item]['random_naive'][scenario] = []
+            accs[row_to_hide][number_item]['random_cirt'][scenario] = []
             accs[row_to_hide][number_item]['random_pirt'][scenario] = []
             accs[row_to_hide][number_item]['random_gpirt'][scenario] = []
+            accs[row_to_hide][number_item]['anchor_naive'][scenario] = []
+            accs[row_to_hide][number_item]['anchor_cirt'][scenario] = []
+            accs[row_to_hide][number_item]['anchor_pirt'][scenario] = []
+            accs[row_to_hide][number_item]['anchor_gpirt'][scenario] = []
+            accs[row_to_hide][number_item]['anchor-irt_naive'][scenario] = []
+            accs[row_to_hide][number_item]['anchor-irt_cirt'][scenario] = []
+            accs[row_to_hide][number_item]['anchor-irt_pirt'][scenario] = []
+            accs[row_to_hide][number_item]['anchor-irt_gpirt'][scenario] = []
+            accs[row_to_hide][number_item]['disc_naive'][scenario] = []
+            accs[row_to_hide][number_item]['disc_cirt'][scenario] = []
+            accs[row_to_hide][number_item]['disc_pirt'][scenario] = []
+            accs[row_to_hide][number_item]['disc_gpirt'][scenario] = []
 
                 
-def compute_acc_irt(scenario, scores_test, scenarios_position, seen_items, unseen_items, A, B, theta, lambd=None):
+def compute_acc_irt(scenario, scores_test, scenarios_position, seen_items, unseen_items, A, B, theta, balance_weights, lambd=None, item_weights=None, thresh=None):
     
     """
     Compute the PIRT or G-PIRT
@@ -182,19 +259,32 @@ def compute_acc_irt(scenario, scores_test, scenarios_position, seen_items, unsee
     # Extract the responses for the seen items in the scenario
     seen_responses = scores_test[[s for s in seen_items if s in scenarios_position[scenario]]]
     
+    # Weighting
+    if type(item_weights)==np.ndarray:
+        assert item_weights.shape == seen_responses.shape
+        assert np.sum(item_weights>=0)
+        assert np.round(np.sum(item_weights),4) == 1
+    else:
+        item_weights = np.ones(seen_responses.shape)
+        item_weights /= item_weights.sum()
+    
+    
     # Determine the weighting parameter if not provided (PIRT case)
-    if lambd == None: lambd = seen_responses.shape[0]/len(scenarios_position[scenario])
+    if lambd == None: lambd = np.round(seen_responses.shape[0]/len(scenarios_position[scenario]),2)
     
     D = A.shape[1] # The number of dimensions in the IRT model
     
     # Compute the first part of the accuracy equation based on seen items
     if lambd == 0: first_part = 0
-    else: first_part = lambd * seen_responses.mean()
-        
+    else: first_part = lambd * (item_weights*seen_responses).sum()
+
     # Compute the second part of the accuracy equation based on unseen items (and IRT model)
-    second_part = (1 - lambd) * item_curve(theta.reshape(1, D, 1), A, B)[0, [u for u in unseen_items if u in scenarios_position[scenario]]].mean()
-    
+    if thresh==None:
+        second_part = (1 - lambd) * (balance_weights*item_curve(theta.reshape(1, D, 1), A, B))[0, [u for u in unseen_items if u in scenarios_position[scenario]]].mean()
+    else:
+        second_part = (1 - lambd) * (balance_weights*(item_curve(theta.reshape(1, D, 1), A, B)>=thresh).astype(float))[0, [u for u in unseen_items if u in scenarios_position[scenario]]].mean()
     return first_part + second_part
+
 
 def update_results(key, scores_test, row_to_hide, chosen_scenarios, scenarios_position, accs, results, number_item):
     
@@ -224,16 +314,16 @@ def update_results(key, scores_test, row_to_hide, chosen_scenarios, scenarios_po
         results[row_to_hide][number_item][key][scenario] = abs_diff 
 
 
-def plot_results(results, scenarios):
+def plot_results(results, scenarios, methods):
     ###
     models = list(results.keys())
     example_key1 = list(results.keys())[0]
     number_items = list(results[example_key1].keys())
     example_key2 = number_items[0]
-    methods = list(results[example_key1][example_key2].keys())
+    #methods = list(results[example_key1][example_key2].keys())
 
     ###
-    colors = ['red', 'green', 'blue']
+    colors = ['red', 'yellow', 'green', 'blue']
     
     results2 = {}
     for scenario in scenarios:
@@ -244,13 +334,13 @@ def plot_results(results, scenarios):
     for scenario in scenarios:
         plt.figure(figsize=(5, 3))
         for i in range(len(number_items)):
-            positions = [i - 0.2, i, i + 0.2]
+            positions = [i - 0.3, i - 0.1, i + 0.1, i + 0.3]
             for pos, d, color in zip(positions, [np.array(results2[scenario][group])[:, :, i] for group in methods], colors):
                 plt.boxplot(d.reshape(-1), positions=[pos], patch_artist=True, showfliers=False, showmeans=True, boxprops=dict(facecolor=color))
         plt.title(scenario)
         plt.xlabel("Number of seen items")
         plt.ylabel("Absolute error (acc estimation)")
-        plt.ylim(0, 0.5)
+        plt.ylim(0, 0.25)
         plt.grid(alpha=.5)
         xticks = [i for i in range(len(number_items))]
         plt.xticks(xticks, [str(number_item) for number_item in number_items])
@@ -259,12 +349,12 @@ def plot_results(results, scenarios):
         #plt.savefig(f'plots/boxplot_metric-{metric}_scenario-{scenario}-{typ}.png', bbox_inches='tight', dpi=300, transparent=True)
         plt.show()
         
-def plot_agg_results(results, scenarios):
+def plot_agg_results(results, scenarios, methods):
     ###
     example_key1 = list(results.keys())[0]
     number_items = list(results[example_key1].keys())
     example_key2 = number_items[0]
-    methods = list(results[example_key1][example_key2].keys())
+    #methods = list(results[example_key1][example_key2].keys())
     
     ###
     agg_results = {}
@@ -280,13 +370,13 @@ def plot_agg_results(results, scenarios):
                 agg_results[method][number_item]+=[np.mean([results[model][number_item][method][scenario] for model in results.keys()])]
 
     ###
-    colors = ['red', 'green', 'blue']
+    colors = ['red', 'yellow', 'green', 'blue']
     results2 = {}
     for method in methods:
         results2[method] = np.array([agg_results[method][number_item] for number_item in number_items]).T
 
     for i in range(len(number_items)):
-        positions = [i - 0.2, i, i + 0.2]
+        positions = [i - 0.3, i - 0.1, i + 0.1, i + 0.3]
         for pos, d, color in zip(positions, [np.array(results2[method])[:, i] for method in methods], colors):
             plt.boxplot(d, positions=[pos], patch_artist=True, showfliers=False, showmeans=True, boxprops=dict(facecolor=color))
     plt.title("Aggregated results")
