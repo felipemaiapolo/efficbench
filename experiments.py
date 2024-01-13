@@ -4,107 +4,27 @@ from irt import *
 from selection import *
 from utils import *
 
+def calculate_gpirt_scores(it, number_items, chosen_scenarios, scenarios, subscenarios_position, responses_test, train_ind, val_ind, scores_train, scenarios_position, E):
+    out = []
+    for number_item in number_items:
+        out.append([[],[],[]])
+        random.seed(it)
+        # Random
+        seen_items, unseen_items = get_seen_unseen_items(chosen_scenarios, scenarios, number_item, subscenarios_position, responses_test)
+        for j in range(len(val_ind)):
+            out[-1][0].append([scores_train[val_ind,:][j][[s for s in seen_items if s in scenarios_position[scenario]]].mean() for scenario in chosen_scenarios])
 
-def validate_lambda_random(it, scenario, number_item, scenarios, subscenarios_position, responses_test, responses_train, scores_train, val_ind, scenarios_position, A, B, balance_weights, lambds):
-    
-    """
-    Validates lambda (a weighting parameter) for the random IRT model by computing the mean absolute difference between computed accuracies and actual scores.
-    
-    Parameters:
-    - it: Iteration number or seed for random number generation.
-    - scenario: The scenario being considered.
-    - number_item: The number of items to consider.
-    - scenarios: A dictionary mapping each scenario to its subscenarios.
-    - subscenarios_position: A nested dictionary mapping each scenario and subscenario to the positions of its items.
-    - responses_test: A numpy array of the test subject's responses to all items.
-    - responses_train: A numpy array of the training subject's responses to all items.
-    - scores_train: Actual scores for training data.
-    - val_ind: Indices of the validation set.
-    - scenarios_position: A dictionary mapping each scenario to the positions of its items.
-    - A: The discrimination parameter of the item.
-    - B: The difficulty parameter of the item.
-    - lambds: A list of lambda values to validate.
-    
-    Returns:
-    - A numpy array of mean absolute differences for each lambda value.
-    """
-    
-    random.seed(it)  # Set the random seed
-    
-    # Determine seen and unseen items based on the given parameters
-    seen_items, unseen_items = get_seen_unseen_items([scenario], scenarios, number_item, subscenarios_position, responses_test)
-    
-    # Estimate ability parameters for the validation set
-    thetas = [estimate_ability_parameters(responses_train[val_ind][j], seen_items, A, B) for j in range(len(val_ind))]
-    
-    # Compute and return the mean absolute differences for each lambda value
-    return np.array([[abs(scores_train[val_ind][j][scenarios_position[scenario]].mean()-compute_acc_irt(scenario, scores_train[val_ind][j], scenarios_position, seen_items, unseen_items, A, B, thetas[j], balance_weights=balance_weights, lambd=lambd)) for lambd in lambds] for j in range(len(val_ind))]).mean(axis=0)
+        # Anchor
+        _, anchor_weights, seen_items, unseen_items = get_anchor(scores_train[train_ind,:], chosen_scenarios, scenarios_position, number_item, random_seed=it)
+        for j in range(len(val_ind)):
+            out[-1][1].append([(anchor_weights[scenario] * scores_train[val_ind,:][j][[s for s in seen_items if s in scenarios_position[scenario]]]).sum() for scenario in chosen_scenarios])
 
-def validate_lambda_anchor(it, scenario, number_item, responses_train, scores_train, val_ind, scenarios_position, A, B, balance_weights, lambds, anchor_irt = False):
-    
-    """
-    Validates lambda (a weighting parameter) for the random IRT model by computing the mean absolute difference between computed accuracies and actual scores.
-    
-    Parameters:
-    - scenario: The scenario being considered.
-    - number_item: The number of items to consider.
-    - responses_train: A numpy array of the training subject's responses to all items.
-    - scores_train: Actual scores for training data.
-    - val_ind: Indices of the validation set.
-    - scenarios_position: A dictionary mapping each scenario to the positions of its items.
-    - A: The discrimination parameter of the item.
-    - B: The difficulty parameter of the item.
-    - lambds: A list of lambda values to validate.
-    
-    Returns:
-    - A numpy array of mean absolute differences for each lambda value.
-    """
-    
-    train_ind = [i for i in range(responses_train.shape[0]) if i not in val_ind]
-    
-    if anchor_irt == True:
-        E = np.vstack((A.squeeze(), B.reshape((1,-1)))) #embeddings
-        _, _, seen_items, unseen_items = get_anchor(E, [scenario], scenarios_position, number_item, it)
-        item_weights = None
-    else:
-        _, anchor_weights, seen_items, unseen_items = get_anchor(scores_train[train_ind], [scenario], scenarios_position, number_item, it)
-        item_weights = anchor_weights[scenario]
-    
-    # Estimate ability parameters for the validation set
-    thetas = [estimate_ability_parameters(responses_train[val_ind][j], seen_items, A, B) for j in range(len(val_ind))]
-    
-    # Compute and return the mean absolute differences for each lambda value
-    return np.array([[abs(scores_train[val_ind][j][scenarios_position[scenario]].mean()-compute_acc_irt(scenario, scores_train[val_ind][j], scenarios_position, seen_items, unseen_items, A, B, thetas[j], balance_weights=balance_weights, lambd=lambd, item_weights=item_weights)) for lambd in lambds] for j in range(len(val_ind))]).mean(axis=0)
+        # Anchor-irt
+        _, anchor_weights, seen_items, unseen_items = get_anchor(E, chosen_scenarios, scenarios_position, number_item, random_seed=it)
+        for j in range(len(val_ind)):
+            out[-1][2].append([(anchor_weights[scenario] * scores_train[val_ind,:][j][[s for s in seen_items if s in scenarios_position[scenario]]]).sum() for scenario in chosen_scenarios])
 
-def validate_lambda_disc(seen_items, scenario, responses_train, scores_train, val_ind, scenarios_position, balance_weights, A, B, lambds):
-    
-    """
-    Validates lambda (a weighting parameter) for the random IRT model by computing the mean absolute difference between computed accuracies and actual scores.
-    
-    Parameters:
-    - scenario: The scenario being considered.
-    - number_item: The number of items to consider.
-    - responses_train: A numpy array of the training subject's responses to all items.
-    - scores_train: Actual scores for training data.
-    - val_ind: Indices of the validation set.
-    - scenarios_position: A dictionary mapping each scenario to the positions of its items.
-    - A: The discrimination parameter of the item.
-    - B: The difficulty parameter of the item.
-    - lambds: A list of lambda values to validate.
-    
-    Returns:
-    - A numpy array of mean absolute differences for each lambda value.
-    """
-    
-    train_ind = [i for i in range(responses_train.shape[0]) if i not in val_ind]
-    unseen_items = [i for i in range(responses_train.shape[1]) if i not in seen_items]
-    item_weights = None
-    
-    # Estimate ability parameters for the validation set
-    thetas = [estimate_ability_parameters(responses_train[val_ind][j], seen_items, A, B) for j in range(len(val_ind))]
-    
-    # Compute and return the mean absolute differences for each lambda value
-    return np.array([[abs(scores_train[val_ind][j][scenarios_position[scenario]].mean()-compute_acc_irt(scenario, scores_train[val_ind][j], scenarios_position, seen_items, unseen_items, A, B, thetas[j], balance_weights=balance_weights, lambd=lambd, item_weights=item_weights)) for lambd in lambds] for j in range(len(val_ind))]).mean(axis=0)
+    return out
 
 def evaluate_scenarios(data, scenario_name, chosen_scenarios, 
                        scenarios, set_of_rows, Ds, iterations, device, bench, 
@@ -211,73 +131,54 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         # Choose the simplest model (D) that is not far from the best model based on validation errors
         ind_D = np.argmax(np.array(errors)-np.min(errors)<.0025)
         D = Ds[ind_D] 
-        #D = Ds[np.argmin(errors)] 
         print("- opt D=", D, "errors=", errors, "\n")
 
         # Choosing lambdas (For random G-PIRT)
         print("\nii) choosing optimal lambdas")
         
-        opt_lambds = {'random_gpirt': {}, 'anchor_gpirt': {}, 'anchor-irt_gpirt': {}, 'disc_gpirt': {}}  # Initialize a dictionary to hold optimal lambda values
+        model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val/'
+        A, B, Theta = load_irt_parameters(model_name)
+        E = np.vstack((A.squeeze(), B.reshape((1,-1))))
+                    
+        pool = mp.Pool(cpu)
+        out = pool.starmap(calculate_gpirt_scores, [(it+1000, number_items, chosen_scenarios, scenarios, subscenarios_position, responses_test, train_ind, val_ind, scores_train, scenarios_position, E) for it in range(2*iterations)])
+        pool.close()
+        pool.join()
         
-        vs = {}
+        vs = {'random_gpirt': {}, 'anchor_gpirt': {}, 'anchor-irt_gpirt':{}}
+        for j,key in enumerate(vs.keys()):
+            vs[key] = {}
+            for k,scenario in enumerate(chosen_scenarios):
+                vs[key][scenario] = {}
+                for i,number_item in enumerate(number_items):
+                    vs[key][scenario][number_item] = np.mean(np.array(out).var(axis=0), axis=2)[i,j,k]
+        
         bs = {}
         for i,scenario in enumerate(chosen_scenarios):
-            vs[scenario] = np.var(scores_train[:,scenarios_position[scenario]])
             bs[scenario] = np.mean(errors2[ind_D][i]) 
-
+            
+        opt_lambds = {'random_gpirt': {}, 'anchor_gpirt': {}, 'anchor-irt_gpirt': {}}  # Initialize a dictionary to hold optimal lambda values
         for scenario in tqdm(chosen_scenarios):
             for key in opt_lambds.keys():
                 opt_lambds[key][scenario] = {}
                 for number_item in number_items: 
-                    if key == 'random_gpirt':
-                        opt_lambds[key][scenario][number_item] = get_lambda(number_item, bs[scenario], vs[scenario])
-                    else:
-                        opt_lambds[key][scenario][number_item] = get_lambda(number_item, bs[scenario], vs[scenario]/2)
-
+                    opt_lambds[key][scenario][number_item] = get_lambda(bs[scenario], vs[key][scenario][number_item])
+                        
         if False:
-            iterations_val = 2*iterations                            
-            if sampling['disc_sampling']==True:
-                seen_items_dic = get_disc_items(responses_train[train_ind], number_items, chosen_scenarios, rows_to_hide_str, scenarios_position, device, bench)
-            # Reload trained IRT model parameters for the chosen dimension (D)
-            model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val/'
-            A, B, Theta = load_irt_parameters(model_name)
-            #print(" - debiasing IRT")
-            #A, B = debias_irt(A, B, Theta, responses_train[train_ind])
+            vs = {}
+            bs = {}
+            for i,scenario in enumerate(chosen_scenarios):
+                vs[scenario] = np.var(scores_train[:,scenarios_position[scenario]])
+                bs[scenario] = np.mean(errors2[ind_D][i]) 
 
             for scenario in tqdm(chosen_scenarios):
                 for key in opt_lambds.keys():
                     opt_lambds[key][scenario] = {}
-                for number_item in number_items: 
-                    if sampling['anchor_sampling']==True: 
-                        # Evaluate lambda values for the anchor 
-                        anchor_irt = False
-                        pool = mp.Pool(cpu)
-                        errors = pool.starmap(validate_lambda_anchor, [(it+1000, scenario, number_item, responses_train, scores_train, val_ind, scenarios_position, A, B, balance_weights, lambds, anchor_irt) for it in range(iterations_val)])
-                        pool.close()
-                        pool.join()
-                        opt_lambds['anchor_gpirt'][scenario][number_item] = lambds[np.argmin(np.array(errors).mean(axis=0))] # Choose the lambda value that minimizes the mean error
-
-                    if sampling['random_sampling']==True:
-                        # Evaluate lambda values for the random IRT model using multiprocessing
-                        pool = mp.Pool(cpu)
-                        errors = pool.starmap(validate_lambda_random, [(it+1000, scenario, number_item, scenarios, subscenarios_position, responses_test, responses_train, scores_train, val_ind, scenarios_position, A, B, balance_weights, lambds) for it in range(iterations_val)])
-                        pool.close()
-                        pool.join()
-                        opt_lambds['random_gpirt'][scenario][number_item] = lambds[np.argmin(np.array(errors).mean(axis=0))]
-
-                    if sampling['disc_sampling']==True:
-                        # Evaluate lambda values for the disc-irt method
-                        errors = validate_lambda_disc(seen_items_dic[number_item], scenario, responses_train, scores_train, val_ind, scenarios_position, balance_weights, A, B, lambds)
-                        opt_lambds['disc_gpirt'][scenario][number_item] = lambds[np.argmin(errors)]
-
-                    if sampling['anchor-irt_sampling']==True:
-                        # Evaluate lambda values for the anchor-irt method
-                        anchor_irt = True
-                        pool = mp.Pool(cpu)
-                        errors = pool.starmap(validate_lambda_anchor, [(it+1000, scenario, number_item, responses_train, scores_train, val_ind, scenarios_position, A, B, balance_weights, lambds, anchor_irt) for it in range(iterations_val)])
-                        pool.close()
-                        pool.join()
-                        opt_lambds['anchor-irt_gpirt'][scenario][number_item] = lambds[np.argmin(np.array(errors).mean(axis=0))] # Choose the lambda value that minimizes the mean error
+                    for number_item in number_items: 
+                        if key == 'random_gpirt':
+                            opt_lambds[key][scenario][number_item] = get_lambda(number_item, bs[scenario], vs[scenario])
+                        else:
+                            opt_lambds[key][scenario][number_item] = get_lambda(number_item, bs[scenario], vs[scenario]/2)
 
         print(opt_lambds)
         
@@ -417,9 +318,9 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
 
                         # Update accuracies for the IRT and G-PIRT approaches
                         for scenario in chosen_scenarios:
-                            accs[rows_to_hide[j]][number_item]['anchor-irt_cirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=None, item_weights=None, thresh=.5))
-                            accs[rows_to_hide[j]][number_item]['anchor-irt_pirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=None, item_weights=None))
-                            accs[rows_to_hide[j]][number_item]['anchor-irt_gpirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=opt_lambds['anchor-irt_gpirt'][scenario][number_item], item_weights=None))
+                            accs[rows_to_hide[j]][number_item]['anchor-irt_cirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=None, item_weights=anchor_weights[scenario], thresh=.5))
+                            accs[rows_to_hide[j]][number_item]['anchor-irt_pirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=None, item_weights=anchor_weights[scenario]))
+                            accs[rows_to_hide[j]][number_item]['anchor-irt_gpirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=opt_lambds['anchor-irt_gpirt'][scenario][number_item], item_weights=anchor_weights[scenario]))
 
                     ### Updating results
                     # Update results with the mean absolute difference for each approach

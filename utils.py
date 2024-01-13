@@ -7,8 +7,8 @@ import autograd.numpy as np
 from autograd import grad
 from tqdm import tqdm
 
-def get_lambda(number_item, b, v):
-    return (number_item*b**2)/(v+(number_item*b**2))
+def get_lambda(b, v):
+    return (b**2)/(v+(b**2))
 
 def debias_irt(A, B, Theta, responses_train, max_iter=500, lr=100000, alpha=0.5, beta=0.9):
     E_initial = np.hstack((A,B))
