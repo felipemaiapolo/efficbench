@@ -83,7 +83,7 @@ def get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, 
     return anchor_points, anchor_weights, seen_items, unseen_items
 
 
-def get_anchor_points_weights(scores_train, scenarios_position, scenario, number_item, random_seed):
+def get_anchor_points_weights(scores_train, scenarios_position, scenario, number_item, random_seed, trials = 10):
     """
     Calculates anchor points and weights using KMedoids clustering.
 
@@ -97,7 +97,9 @@ def get_anchor_points_weights(scores_train, scenarios_position, scenario, number
     tuple: A tuple containing the anchor points and anchor weights.
     """
     # Fitting the KMedoids model
-    kmedoids = KMedoids(n_clusters=number_item, metric='euclidean', init='k-medoids++', random_state=random_seed).fit(scores_train[:,scenarios_position[scenario]].T)
+    kmedoids_models = [KMedoids(n_clusters=number_item, metric='euclidean', init='k-medoids++', random_state=1000*t+random_seed).fit(scores_train[:,scenarios_position[scenario]].T) for t in range(trials)] #method='pam', 
+
+    kmedoids = kmedoids_models[np.argmin([m.inertia_ for m in kmedoids_models])]
     
     # Calculating anchor points
     anchor_points = kmedoids.medoid_indices_
