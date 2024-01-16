@@ -56,6 +56,53 @@ def get_seen_unseen_items(scenarios_choosen, scenarios, number_item, subscenario
 
     return seen_items, unseen_items
 
+
+def select_initial_adaptive_items(A, B, Theta, number_item, try_size=2000, seed=42):
+    random.seed(seed)
+    mats = np.stack([np.outer(A[0, :, i], A[0, :, i]) for i in range(A.shape[2])])
+    samples = [random.sample(range(A.shape[-1]), number_item) for _ in range(try_size)]
+    samples_infos = np.stack([np.linalg.det(np.array([(p * (1 - p))[:, None, None] * mats[s] for p in item_curve(Theta, A[:, :, s], B[:, :, s])]).sum(axis=1)).sum() for s in samples])
+    seen_items = samples[np.argmax(samples_infos)]
+    unseen_items = [i for i in range(A.shape[-1]) if i not in seen_items]
+    return seen_items, unseen_items, mats
+
+
+def run_adaptive_selection(responses_test, seen_items, unseen_items, scenarios_choosen, scenarios_position, A, B, mats, target_count, balance=False):
+    
+    assert len(seen_items) <= target_count
+    count = len(seen_items)
+
+    while True:
+        for scenario in scenarios_choosen:
+            if count >= target_count:
+                return seen_items, unseen_items 
+            
+            seen_items, unseen_items = select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance)
+            count += 1
+
+def select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance):
+    
+    D = A.shape[1]
+
+    if balance:
+        unseen_items_scenario = [u for u in unseen_items if u in scenarios_position[scenario]]
+    else:
+        unseen_items_scenario = unseen_items
+
+    optimal_theta = estimate_ability_parameters(responses_test, seen_items, A, B)
+    P = item_curve(optimal_theta, A, B).squeeze()
+
+    # Compute information matrices for seen and unseen items
+    I_seen = ((P * (1 - P))[:, None, None] * mats)[seen_items].sum(axis=0)
+    I_unseen = ((P * (1 - P))[:, None, None] * mats)[unseen_items_scenario]
+
+    # Select the next item based on the maximum determinant of information
+    next_item = unseen_items_scenario[np.argmax(np.linalg.det(I_seen[None, :, :] + I_unseen))]                    
+    seen_items.append(next_item)
+    unseen_items.remove(next_item)
+
+    return seen_items, unseen_items
+
 def get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, random_seed):
     """
     Calculates anchor points, anchor weights, seen and unseen items.

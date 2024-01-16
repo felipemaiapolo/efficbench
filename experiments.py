@@ -3,7 +3,10 @@ import multiprocessing as mp
 from irt import *
 from selection import *
 from utils import *
+import os
 
+JOB_ID = os.getenv('SLURM_JOB_ID')
+JOB_ID = JOB_ID if JOB_ID is not None else 'local'
 
 def validate_lambda_random(it, scenario, number_item, scenarios, subscenarios_position, responses_test, responses_train, scores_train, val_ind, scenarios_position, A, B, balance_weights, lambds):
     
@@ -106,6 +109,153 @@ def validate_lambda_disc(seen_items, scenario, responses_train, scores_train, va
     # Compute and return the mean absolute differences for each lambda value
     return np.array([[abs(scores_train[val_ind][j][scenarios_position[scenario]].mean()-compute_acc_irt(scenario, scores_train[val_ind][j], scenarios_position, seen_items, unseen_items, A, B, thetas[j], balance_weights=balance_weights, lambd=lambd, item_weights=item_weights)) for lambd in lambds] for j in range(len(val_ind))]).mean(axis=0)
 
+def evaluate_scenarios_adaptive(data, scenario_name, chosen_scenarios, 
+                       scenarios, set_of_rows, Ds, iterations, device, bench='irt_helm', epochs=2000,
+                       #sampling = {'random_sampling':True,'anchor_sampling':False,
+                       #            'anchor-irt_sampling':False,'disc_sampling':False}
+                                   ):
+    """
+    """
+
+    #epochs = 5000 #5 #1000 #default 
+    lr = .1 #default .1
+    number_items = [10, 25, 50, 75, 100] 
+    balance = True
+    random_state = 42
+
+    accs_final = []
+    results_final = []
+
+    for scenario in list(scenarios.keys()):
+
+        #scenario_name = scenario
+        #chosen_scenarios = [scenario]
+        #set_of_rows = create_sublists_corrected(list(range(len(data['models']))), num_elements)
+        
+        accs = {}
+        results = {}
+
+        for rows_to_hide in tqdm(set_of_rows):
+            rows_to_hide_str = ':'.join([str(r) for r in rows_to_hide])
+
+            ### Prep data
+            scenarios_position, subscenarios_position = prepare_data(chosen_scenarios, scenarios, data)
+            scores = create_responses(chosen_scenarios, scenarios, data)
+            scores_train = scores[[i for i in range(scores.shape[0]) if i not in rows_to_hide]]
+            scores_test = scores[[i for i in range(scores.shape[0]) if i in rows_to_hide]]
+
+            responses_train = np.zeros(scores_train.shape)
+            responses_test = np.zeros(scores_test.shape)
+
+            '''
+            cs = np.linspace(0.01,.99,1000) #np.linspace(0,1,1000)
+            c = cs[np.argmin([np.mean((np.abs((scores_train>c).mean(axis=1)-scores_train.mean(axis=1)))) for c in cs])]
+            responses_train = (scores_train>c).astype(int)
+            responses_test = (scores_test>c).astype(int)
+            '''
+
+            # Threshold responses 
+            cs = np.linspace(0.01,.99,1000)  # Threshold values to consider
+            for scenario in chosen_scenarios:
+                ind = scenarios_position[scenario]
+                # Find the best threshold value that minimizes the difference between mean responses and mean scores
+                c = cs[np.argmin([np.mean((np.abs((scores_train[:,ind]>c).mean(axis=1)-scores_train[:,ind].mean(axis=1)))) for c in cs])]
+                # Apply the threshold to train and test responses
+                responses_train[:,ind] = (scores_train[:,ind]>c).astype(int)
+                responses_test[:,ind] = (scores_test[:,ind]>c).astype(int)
+            
+            ### Choosing D
+            train_ind = list(range(0,responses_train.shape[0],2))
+            val_ind = [i for i in range(responses_train.shape[0]) if i not in train_ind]
+            #responses_train[train_ind].shape
+
+            dataset_name = f'data/irt_helm/rows-{rows_to_hide_str}_scenario-{scenario_name}_val_all_models_{JOB_ID}.jsonlines'
+            create_irt_dataset(responses_train[train_ind], dataset_name)
+
+            if len(Ds) > 1:
+                errors = []
+                for D in Ds:
+                    model_name = f'models/irt_helm/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val_all_models_{JOB_ID}/'
+                    train_irt_model(dataset_name, model_name, D, lr, epochs, device) ## (dataset_name, model_name, D, hidden, dropout, lr, epochs, device
+                    A, B, Theta = load_irt_parameters(model_name)
+                    seen_items, unseen_items, _ = select_initial_adaptive_items(A, B, Theta, 2*D)
+                    errors.append(np.median(np.abs(
+                        responses_train[val_ind][:,unseen_items].mean(axis=1)-
+                        np.array([item_curve(estimate_ability_parameters(subject, seen_items, A, B), A, B)[:,unseen_items].mean() 
+                                for subject in responses_train[val_ind]]))))
+                D = Ds[np.argmin(errors)]
+                print(D,errors)
+            else:
+                D = Ds[0]   
+
+            ### Saving dataset
+            dataset_name = f'data/irt_helm/row-{rows_to_hide_str}_scenario-{scenario_name}_all_models_{JOB_ID}.jsonlines'
+            create_irt_dataset(responses_train, dataset_name)
+
+            ### Train final IRT model
+            model_name = f'models/irt_helm/row-{rows_to_hide_str}_D-validate_scenario-{scenario_name}_all_models_{JOB_ID}/'
+            train_irt_model(dataset_name, model_name, D, lr, epochs, device) ## (dataset_name, model_name, D, hidden, dropout, lr, epochs, device
+
+            ### Load IRT model
+            A, B, Theta = load_irt_parameters(model_name)
+
+            ### Creating storage space in acc and results to store new results
+            [create_space_accs_results(accs, results, subject, number_items, chosen_scenarios) for subject in rows_to_hide]
+
+            ### Running adaptive evaluation
+            for j in range(len(rows_to_hide)):
+
+                seen_items, unseen_items, mats = select_initial_adaptive_items(A, B, Theta, 2*D) #number_items[0]
+
+                for number_item in number_items:
+
+                    # Number of samples
+                    target_count = len(chosen_scenarios)*number_item
+
+                    # Sampling new items
+                    seen_items, unseen_items = run_adaptive_selection(responses_test[j], seen_items, unseen_items, chosen_scenarios, scenarios_position, A, B, mats, target_count, balance=balance)
+
+                    # Running IRT in the remaining sample
+                    new_theta = estimate_ability_parameters(responses_test[j], seen_items, A, B)
+
+                    # Updating 'accs' and 'results'
+                    update_accs_irt('adaptive_irt', scores_test[j], responses_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, seen_items, unseen_items, A, B, new_theta, accs, number_item)
+                    update_results('adaptive_irt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
+
+            ### Running random evaluation
+            for j in range(len(rows_to_hide)):
+
+                for number_item in number_items:
+
+                    ### Running with different seeds (ie, different seen_items)
+                    for it in range(iterations):
+                        random.seed(random_state*it)
+                        seen_items, unseen_items = get_seen_unseen_items(chosen_scenarios, scenarios, number_item, subscenarios_position, responses_test)
+
+                        ### naive
+                        # Updating 'accs'
+                        update_accs_naive('random_naive', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, seen_items, accs, number_item)
+
+                        ### IRT
+                        new_theta = estimate_ability_parameters(responses_test[j], seen_items, A, B)
+
+                        # Updating 'accs'
+                        update_accs_irt('random_irt', scores_test[j], responses_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, seen_items, unseen_items, A, B, new_theta, accs, number_item)
+
+                    ### Updating 'results'
+                    update_results('random_naive', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
+                    update_results('random_irt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
+
+        ### plots
+        #plot_results(results, chosen_scenarios, number_items, scenarios_metrics[scenario], scenario_name, 'partial')
+
+        accs_final.append(accs)
+        results_final.append(results)
+
+        return accs_final, results_final
+
+
+
 def evaluate_scenarios(data, scenario_name, chosen_scenarios, 
                        scenarios, set_of_rows, Ds, iterations, device, bench, 
                        sampling = {'random_sampling':True,'anchor_sampling':False,
@@ -183,7 +333,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         train_ind = [i for i in range(responses_train.shape[0]) if i not in val_ind]
         
         # Create IRT dataset for validation and train IRT models
-        dataset_name = f'data/{bench}/rows-{rows_to_hide_str}_scenario-{scenario_name}_val.jsonlines'
+        dataset_name = f'data/{bench}/rows-{rows_to_hide_str}_scenario-{scenario_name}_val_{JOB_ID}.jsonlines'
         create_irt_dataset(responses_train[train_ind], dataset_name)
 
         errors = []  # Initialize a list to hold validation errors
@@ -191,7 +341,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         print("\ni) choosing optimal D")
         for D in tqdm(Ds):
             # Train IRT model for the current dimension (D)
-            model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val/'
+            model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val_{JOB_ID}/'
             train_irt_model(dataset_name, model_name, D, lr, epochs, device)
             # Load trained IRT model parameters
             A, B, Theta = load_irt_parameters(model_name)
@@ -282,9 +432,9 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         print(opt_lambds)
         
         # Save the final dataset and train the final IRT model
-        dataset_name = f'data/{bench}/row-{rows_to_hide_str}_scenario-{scenario_name}.jsonlines'
+        dataset_name = f'data/{bench}/row-{rows_to_hide_str}_scenario-{scenario_name}_{JOB_ID}.jsonlines'
         create_irt_dataset(responses_train, dataset_name)
-        model_name = f'models/{bench}/row-{rows_to_hide_str}_D-validate_scenario-{scenario_name}/'
+        model_name = f'models/{bench}/row-{rows_to_hide_str}_D-validate_scenario-{scenario_name}_{JOB_ID}/'
         train_irt_model(dataset_name, model_name, D, lr, epochs, device)
 
         # Load the final IRT model
