@@ -1,6 +1,8 @@
 import numpy as np
 import random
 from sklearn_extra.cluster import KMedoids
+from scipy.integrate import nquad, quad
+from scipy.stats import norm
 from tqdm import tqdm
 from irt import *
 from utils import *
@@ -67,7 +69,7 @@ def select_initial_adaptive_items(A, B, Theta, number_item, try_size=2000, seed=
     return seen_items, unseen_items, mats
 
 
-def run_adaptive_selection(responses_test, seen_items, unseen_items, scenarios_choosen, scenarios_position, A, B, mats, target_count, balance=False):
+def run_adaptive_selection(responses_test, seen_items, unseen_items, scenarios_choosen, scenarios_position, A, B, mats, target_count, balance=False, ki=False):
     
     assert len(seen_items) <= target_count
     count = len(seen_items)
@@ -77,7 +79,11 @@ def run_adaptive_selection(responses_test, seen_items, unseen_items, scenarios_c
             if count >= target_count:
                 return seen_items, unseen_items 
             
-            seen_items, unseen_items = select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance)
+            if not ki:
+                seen_items, unseen_items = select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance)
+            else:
+                seen_items, unseen_items = select_next_adaptive_item_KI(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance)
+
             count += 1
 
 def select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance):
@@ -102,6 +108,153 @@ def select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario
     unseen_items.remove(next_item)
 
     return seen_items, unseen_items
+
+def select_next_adaptive_item_KI(responses_test, 
+                                 seen_items, 
+                                 unseen_items, 
+                                 scenario, 
+                                 scenarios_position, 
+                                 A, B, mats, 
+                                 balance):
+
+    # Define the KL divergence for a single item. (Equation 7)
+    def kl_divergence(theta_0, theta_hat, xj, a, b):
+        f_theta_0 = item_response_function(xj, theta_0, a, b)
+        f_theta_hat = item_response_function(xj, theta_hat, a, b)
+        if f_theta_0 > 0 and f_theta_hat > 0:
+            return f_theta_0 * np.log(f_theta_0 / f_theta_hat)
+        else:
+            return 0
+
+    # Define the bounds for the integration (as in Equation 8/9)
+    def integration_bounds(theta_p0, k, r):
+        lower_bound = theta_p0 - r / np.sqrt(k)
+        upper_bound = theta_p0 + r / np.sqrt(k)
+        return lower_bound, upper_bound
+
+    # Integrate the KL divergence over the p-dimensional space.
+    def multivariate_ki(theta, theta_0, k, a, b, xj, r=3):
+        """ k -> number of seen samples  
+            r -> some constant usually set to 3
+            xj -> binary item response
+            """
+        
+        # Define the limits for each dimension.
+        #limits = [integration_bounds(th, k, r) for th in theta.squeeze()]
+        limits = [integration_bounds(theta, k, r)]
+
+        # Define the integrand function.
+        def integrand(*theta):
+            return sum(kl_divergence(theta_0, th, xj, a, b) for th in theta)
+        def integrand2(*theta):
+            return sum(kl_divergence(theta_0, theta, xj, a, b))
+        #print('jup2')
+        ki, _ = quad(integrand2, limits[0][0], limits[0][1],)
+
+        #ki, _ = nquad(integrand, limits)
+
+        return ki
+
+    D = A.shape[1]
+
+    if balance:
+        unseen_items_scenario = [u for u in unseen_items if u in scenarios_position[scenario]]
+    else:
+        unseen_items_scenario = unseen_items
+
+    optimal_theta = estimate_ability_parameters(responses_test, seen_items, A, B)
+
+    ki_values = []
+    for unseen_item in unseen_items_scenario:
+        item_response = responses_test[unseen_item]
+
+        a = A[0, 0, unseen_item]
+        b = B[0, 0, unseen_item]
+
+        ki_value = multivariate_ki(optimal_theta, theta_0=0.5, k=len(seen_items),a=a, b=b, xj=item_response)
+
+        ki_values.append(ki_value)
+
+    '''
+    # batched
+    print('passed')
+    item_response = responses_test[unseen_items_scenario]
+
+    a = A[0, 0, unseen_items_scenario]
+    b = B[0, 0, unseen_items_scenario]
+
+    ki_values = multivariate_ki(optimal_theta, theta_0=0.5, k=len(seen_items),a=a, b=b, xj=item_response)
+    '''
+      
+
+    next_item = unseen_items_scenario[np.argmax(ki_values)]
+
+    seen_items.append(next_item)
+    unseen_items.remove(next_item)
+
+    return seen_items, unseen_items
+
+
+def get_gpirt_weighing(seen_items: list,
+                       unseen_items: list, 
+                       scenarios_position: list,
+                       chosen_scenarios: list,
+                       A: np.array,
+                       B: np.array,
+                       ) -> list:
+    """
+    Gets weights for unseen items based on proximity in IRT parameter space
+
+    """
+    by_scenario = True
+    weights = {}
+
+    IRT_params = np.concatenate((A, B), axis=1)
+
+    if by_scenario:
+        for i, scenario in enumerate(chosen_scenarios):
+            # select indices of current scenario
+            scenario_idxs = scenarios_position[scenario]
+
+            scenario_seen_items = [s for s in seen_items if s in scenarios_position[scenario]]
+
+            weights[scenario] = get_weights(IRT_params, 
+                                            scenario_seen_items,
+                                            scenario_idxs)
+    else:
+        weights['all'] = get_weights(IRT_params, 
+                                     seen_items,
+                                     unseen_items)
+
+    return weights
+
+def get_weights(IRT_params: np.array,
+                seen_items: list,
+                all_items: list):
+    """
+    Assign each item a seen item based on distance in IRT-parameter space.
+    Calculate weights for each seen item based on other items assigned to it.
+    """
+    # Prepare parameter space
+    params_seen = IRT_params[:, :, seen_items]
+    params_all = IRT_params[:, :, all_items]
+
+    # Prepare an array to hold the indices of the closest points
+    closest_indices = np.zeros(params_all.shape[2], dtype=int)
+
+    # Iterate over each unseen item
+    for i in range(params_all.shape[2]):
+        # Calculate the Euclidean distances to all seen items
+        distances = np.linalg.norm(params_seen - params_all[:, :, i:i+1], axis=1)
+
+        # Find the index of the closest seen item
+        closest_indices[i] = np.argmin(distances)
+    
+    # Count the frequency of each index in closest_indices
+    frequency = np.bincount(closest_indices, minlength=params_seen.shape[2])
+
+    # Normalize the frequencies to get weights
+    return frequency / np.sum(frequency)
 
 def get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, random_seed):
     """
@@ -128,6 +281,7 @@ def get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, 
     unseen_items = [i for i in range(scores_train.shape[1]) if i not in seen_items]
     
     return anchor_points, anchor_weights, seen_items, unseen_items
+
 
 
 def get_anchor_points_weights(scores_train, scenarios_position, scenario, number_item, random_seed):

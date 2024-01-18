@@ -69,6 +69,8 @@ def load_irt_parameters(model_name):
     Theta = np.array(params['ability'])[:,:,None]
     return A, B, Theta
 
+
+
 def estimate_ability_parameters(responses_test, seen_items, A, B, theta_init=None, eps=1e-10, optimizer="BFGS"):
     
     """
@@ -82,6 +84,7 @@ def estimate_ability_parameters(responses_test, seen_items, A, B, theta_init=Non
     - theta_init: Initial guess for the ability parameters.
     - eps: A small value to avoid division by zero and log of zero errors.
     - optimizer: The optimization method to use.
+    - weights: weighting for items according to their representativeness of the whole scenario
     
     Returns: 
     - optimal_theta: The estimated ability parameters for the test subject.
@@ -92,16 +95,17 @@ def estimate_ability_parameters(responses_test, seen_items, A, B, theta_init=Non
     # Define the negative log likelihood function
     def neg_log_like(x):
         P = item_curve(x.reshape(1, D, 1), A[:, :, seen_items], B[:, :, seen_items]).squeeze()
+
         log_likelihood = np.sum(responses_test[seen_items] * np.log(P + eps) + (1 - responses_test[seen_items]) * np.log(1 - P + eps))
         return -log_likelihood
-
+    
     # Ensure the initial theta is a numpy array with the correct shape
     if type(theta_init) == np.ndarray:
         theta_init = theta_init.reshape(-1)
         assert theta_init.shape[0] == D
     else:
         theta_init = np.zeros(D)
-    
+
     # Use the minimize function to find the ability parameters that minimize the negative log likelihood
     optimal_theta = minimize(neg_log_like, theta_init, method = optimizer).x[None,:,None] 
     

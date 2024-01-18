@@ -119,7 +119,7 @@ def evaluate_scenarios_adaptive(data, scenario_name, chosen_scenarios,
 
     #epochs = 5000 #5 #1000 #default 
     lr = .1 #default .1
-    number_items = [10, 25, 50, 75, 100] 
+    number_items = [10] #, 25, 50, 75, 100] 
     balance = True
     random_state = 42
 
@@ -165,6 +165,8 @@ def evaluate_scenarios_adaptive(data, scenario_name, chosen_scenarios,
                 responses_test[:,ind] = (scores_test[:,ind]>c).astype(int)
             
             ### Choosing D
+            print("\ni) choosing optimal D")
+
             train_ind = list(range(0,responses_train.shape[0],2))
             val_ind = [i for i in range(responses_train.shape[0]) if i not in train_ind]
             #responses_train[train_ind].shape
@@ -187,6 +189,26 @@ def evaluate_scenarios_adaptive(data, scenario_name, chosen_scenarios,
                 print(D,errors)
             else:
                 D = Ds[0]   
+
+            # Choosing lambdas (For random G-PIRT)
+            print("\nii) choosing optimal lambdas")
+            
+            opt_lambds = {'random_gpirt': {}, 'anchor_gpirt': {}, 'anchor-irt_gpirt': {}, 'disc_gpirt': {}}  # Initialize a dictionary to hold optimal lambda values
+            
+            vs = {}
+            bs = {}
+            for i,scenario in enumerate(chosen_scenarios):
+                vs[scenario] = np.var(scores_train[:,scenarios_position[scenario]])
+                bs[scenario] = np.mean(errors2[ind_D][i]) 
+
+            for scenario in tqdm(chosen_scenarios):
+                for key in opt_lambds.keys():
+                    opt_lambds[key][scenario] = {}
+                    for number_item in number_items: 
+                        if key == 'random_gpirt':
+                            opt_lambds[key][scenario][number_item] = get_lambda(number_item, bs[scenario], vs[scenario])
+                        else:
+                            opt_lambds[key][scenario][number_item] = get_lambda(number_item, bs[scenario], vs[scenario]/2)
 
             ### Saving dataset
             dataset_name = f'data/irt_helm/row-{rows_to_hide_str}_scenario-{scenario_name}_all_models_{JOB_ID}.jsonlines'
@@ -224,9 +246,7 @@ def evaluate_scenarios_adaptive(data, scenario_name, chosen_scenarios,
 
             ### Running random evaluation
             for j in range(len(rows_to_hide)):
-
                 for number_item in number_items:
-
                     ### Running with different seeds (ie, different seen_items)
                     for it in range(iterations):
                         random.seed(random_state*it)
@@ -258,8 +278,12 @@ def evaluate_scenarios_adaptive(data, scenario_name, chosen_scenarios,
 
 def evaluate_scenarios(data, scenario_name, chosen_scenarios, 
                        scenarios, set_of_rows, Ds, iterations, device, bench, 
-                       sampling = {'random_sampling':True,'anchor_sampling':False,
-                                   'anchor-irt_sampling':False,'disc_sampling':False}):
+                       sampling = {'random_sampling':True,
+                                   'anchor_sampling':False,
+                                   'anchor-irt_sampling':False,
+                                   'disc_sampling':False, 
+                                   'adaptive_sampling': False,
+                                   'adaptive-ki_sampling': False}, epochs=2000):
 
     """
     Evaluates scenarios by training and validating IRT models, then computing accuracies and updating results.
@@ -281,11 +305,12 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
     assert bench in ['irt_helm', 'irt_lb']
     
     lambds = [None] + np.round(np.linspace(0,1,10),2).tolist()  # Lambda values to consider
-    number_items = [10, 25, 50, 75, 100]  # Number of items to consider in evaluations
+    number_items = [10, 25] if sampling['adaptive-ki_sampling'] else [10, 25, 50, 75, 100]  # Number of items to consider in evaluations
 
     cpu = mp.cpu_count()  # Number of available CPU cores
-    epochs = 2000  # Number of epochs for IRT model training (package default is 2000)
+    #epochs = 2000  # Number of epochs for IRT model training (package default is 2000)
     lr = .1  # Learning rate for IRT model training (package default is .1)
+    balance = True
 
     accs = {}  # Initialize a dictionary to hold accuracies
     results = {}  # Initialize a dictionary to hold results
@@ -367,7 +392,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         # Choosing lambdas (For random G-PIRT)
         print("\nii) choosing optimal lambdas")
         
-        opt_lambds = {'random_gpirt': {}, 'anchor_gpirt': {}, 'anchor-irt_gpirt': {}, 'disc_gpirt': {}}  # Initialize a dictionary to hold optimal lambda values
+        opt_lambds = {'random_gpirt': {}, 'anchor_gpirt': {}, 'anchor-irt_gpirt': {}, 'disc_gpirt': {}, 'adaptive_gpirt': {}}  # Initialize a dictionary to hold optimal lambda values
         
         vs = {}
         bs = {}
@@ -384,53 +409,6 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
                     else:
                         opt_lambds[key][scenario][number_item] = get_lambda(number_item, bs[scenario], vs[scenario]/2)
 
-        if False:
-            iterations_val = 2*iterations                            
-            if sampling['disc_sampling']==True:
-                seen_items_dic = get_disc_items(responses_train[train_ind], number_items, chosen_scenarios, rows_to_hide_str, scenarios_position, device, bench)
-            # Reload trained IRT model parameters for the chosen dimension (D)
-            model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val/'
-            A, B, Theta = load_irt_parameters(model_name)
-            #print(" - debiasing IRT")
-            #A, B = debias_irt(A, B, Theta, responses_train[train_ind])
-
-            for scenario in tqdm(chosen_scenarios):
-                for key in opt_lambds.keys():
-                    opt_lambds[key][scenario] = {}
-                for number_item in number_items: 
-                    if sampling['anchor_sampling']==True: 
-                        # Evaluate lambda values for the anchor 
-                        anchor_irt = False
-                        pool = mp.Pool(cpu)
-                        errors = pool.starmap(validate_lambda_anchor, [(it+1000, scenario, number_item, responses_train, scores_train, val_ind, scenarios_position, A, B, balance_weights, lambds, anchor_irt) for it in range(iterations_val)])
-                        pool.close()
-                        pool.join()
-                        opt_lambds['anchor_gpirt'][scenario][number_item] = lambds[np.argmin(np.array(errors).mean(axis=0))] # Choose the lambda value that minimizes the mean error
-
-                    if sampling['random_sampling']==True:
-                        # Evaluate lambda values for the random IRT model using multiprocessing
-                        pool = mp.Pool(cpu)
-                        errors = pool.starmap(validate_lambda_random, [(it+1000, scenario, number_item, scenarios, subscenarios_position, responses_test, responses_train, scores_train, val_ind, scenarios_position, A, B, balance_weights, lambds) for it in range(iterations_val)])
-                        pool.close()
-                        pool.join()
-                        opt_lambds['random_gpirt'][scenario][number_item] = lambds[np.argmin(np.array(errors).mean(axis=0))]
-
-                    if sampling['disc_sampling']==True:
-                        # Evaluate lambda values for the disc-irt method
-                        errors = validate_lambda_disc(seen_items_dic[number_item], scenario, responses_train, scores_train, val_ind, scenarios_position, balance_weights, A, B, lambds)
-                        opt_lambds['disc_gpirt'][scenario][number_item] = lambds[np.argmin(errors)]
-
-                    if sampling['anchor-irt_sampling']==True:
-                        # Evaluate lambda values for the anchor-irt method
-                        anchor_irt = True
-                        pool = mp.Pool(cpu)
-                        errors = pool.starmap(validate_lambda_anchor, [(it+1000, scenario, number_item, responses_train, scores_train, val_ind, scenarios_position, A, B, balance_weights, lambds, anchor_irt) for it in range(iterations_val)])
-                        pool.close()
-                        pool.join()
-                        opt_lambds['anchor-irt_gpirt'][scenario][number_item] = lambds[np.argmin(np.array(errors).mean(axis=0))] # Choose the lambda value that minimizes the mean error
-
-        print(opt_lambds)
-        
         # Save the final dataset and train the final IRT model
         dataset_name = f'data/{bench}/row-{rows_to_hide_str}_scenario-{scenario_name}_{JOB_ID}.jsonlines'
         create_irt_dataset(responses_train, dataset_name)
@@ -509,6 +487,53 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
                     update_results('random_cirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
                     update_results('random_pirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
                     update_results('random_gpirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
+
+        if sampling['adaptive_sampling']==True:
+            ### Running adaptive evaluation for each hidden row ###
+            for j in tqdm(range(len(rows_to_hide))):
+
+                seen_items, unseen_items, mats = select_initial_adaptive_items(A, B, Theta, 2*D) #number_items[0]
+
+                for number_item in number_items:
+
+                    # Number of samples
+                    target_count = len(chosen_scenarios)*number_item
+                    print(target_count)
+                    print(number_item)
+                    print(j)
+
+                    # Sampling new items
+                    seen_items, unseen_items = run_adaptive_selection(responses_test[j], 
+                                                                      seen_items, unseen_items, 
+                                                                      chosen_scenarios, 
+                                                                      scenarios_position, A, B, 
+                                                                      mats, 
+                                                                      target_count, 
+                                                                      balance=balance,
+                                                                      ki=sampling['adaptive-ki_sampling'])
+
+                    # Get weighting for usage in gpirt
+                    weights = get_gpirt_weighing(seen_items, 
+                                                 unseen_items,
+                                                 scenarios_position,
+                                                 chosen_scenarios,
+                                                 A, B)
+
+                    # Running IRT in the remaining sample
+                    new_theta = estimate_ability_parameters(responses_test[j], seen_items, A, B)
+
+                    # Updating 'accs' and 'results'
+                    #update_accs_irt('adaptive_irt', scores_test[j], responses_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, seen_items, unseen_items, A, B, new_theta, accs, number_item)
+                    #update_results('adaptive_irt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
+                    for scenario in chosen_scenarios:
+                        accs[rows_to_hide[j]][number_item]['adaptive_pirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=None, item_weights=None))
+                        accs[rows_to_hide[j]][number_item]['adaptive_gpirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=opt_lambds['adaptive_gpirt'][scenario][number_item], item_weights=weights[scenario]))
+
+                    # TODO: Adapt this to adaptive sampling
+                    #update_results('random_naive', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
+                    #update_results('adaptive_cirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
+                    update_results('adaptive_pirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
+                    update_results('adaptive_gpirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
 
         ### Running disc evaluation for each hidden row ###
         if sampling['disc_sampling']==True:
