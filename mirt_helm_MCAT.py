@@ -3,14 +3,16 @@ import pickle
 from irt import *
 from selection import *
 from utils import *
-from experiments import evaluate_scenarios_adaptive, evaluate_scenarios
+from experiments import evaluate_scenarios
 import os
 
 JOB_ID = os.getenv('SLURM_JOB_ID')
 JOB_ID = JOB_ID if JOB_ID is not None else 'local'
 
 IGNORE_CONTINUOUS = True
-continuous_scenarios = ['msmarco:track=regular,valid_topk=30,', 'narrative_qa:', 'natural_qa:mode=closedbook,', 'natural_qa:mode=openbook_longans,', 'quac:', ]
+continuous_scenarios = ['msmarco:track=regular,valid_topk=30,', 
+                        'narrative_qa:', 'natural_qa:mode=closedbook,', 
+                        'natural_qa:mode=openbook_longans,', 'quac:', ]
 
 
 scenarios = {'boolq:':['boolq:'],
@@ -83,20 +85,20 @@ num_elements = 4
 iterations = 8
 
 epochs_grid = [10] if DEV else [2000] #[100, 1000, 2000, 4000, 5000]
-Ds = [1] if DEV else [5, 10, 15] #[1] # #[1, 3, 5]
+Ds = [1] if DEV else [1] #, 3, 5, 10, 15] #[1]  #[1, 3, 5]
 
 chosen_scenarios = list(scenarios.keys())
 scenario_name = 'full'
 set_of_rows = create_sublists_corrected(list(range(len(data['models']))), num_elements)
 sampling = {'random_sampling':False if DEV else True,
-            'anchor_sampling':False,
-            'anchor-irt_sampling':False,
-            'disc_sampling':False, 
+            'anchor_sampling':True,
+            'anchor-irt_sampling':True,
+            'disc_sampling':True, 
             'adaptive_sampling': True,
             'adaptive-ki_sampling': False}
 
 for epochs in epochs_grid:
-    name_run = f'adaptive_clean_run' #'baseline_default_pipeline'
+    name_run = f'adaptive_rerun_D1_reweighing_all_samplings' #'baseline_default_pipeline' # adaptive_rerun_D1_reweighing_all_scenarios
     SAVE_NAME = f'{name_run}_{JOB_ID}.pkl'
 
     accs, results = evaluate_scenarios(data, scenario_name, 

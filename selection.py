@@ -133,7 +133,7 @@ def select_next_adaptive_item_KI(responses_test,
         return lower_bound, upper_bound
 
     # Integrate the KL divergence over the p-dimensional space.
-    def multivariate_ki(theta, theta_0, k, a, b, xj, r=3):
+    def multivariate_ki(theta_hat, k, a, b, xj, r=3):
         """ k -> number of seen samples  
             r -> some constant usually set to 3
             xj -> binary item response
@@ -141,16 +141,12 @@ def select_next_adaptive_item_KI(responses_test,
         
         # Define the limits for each dimension.
         #limits = [integration_bounds(th, k, r) for th in theta.squeeze()]
-        limits = [integration_bounds(theta, k, r)]
+        limits = [integration_bounds(theta_hat, k, r)]
 
-        # Define the integrand function.
-        def integrand(*theta):
-            return sum(kl_divergence(theta_0, th, xj, a, b) for th in theta)
-        def integrand2(*theta):
-            return sum(kl_divergence(theta_0, theta, xj, a, b))
-        #print('jup2')
-        ki, _ = quad(integrand2, limits[0][0], limits[0][1],)
+        def integrand3(theta_0, theta_hat, xj, a, b):
+            return kl_divergence(theta_0, theta_hat, xj, a, b)
 
+        ki, _ = quad(integrand3, limits[0][0], limits[0][1], args=(theta_hat, xj, a, b))
         #ki, _ = nquad(integrand, limits)
 
         return ki
@@ -164,28 +160,33 @@ def select_next_adaptive_item_KI(responses_test,
 
     optimal_theta = estimate_ability_parameters(responses_test, seen_items, A, B)
 
+    
     ki_values = []
     for unseen_item in unseen_items_scenario:
         item_response = responses_test[unseen_item]
 
-        a = A[0, 0, unseen_item]
-        b = B[0, 0, unseen_item]
+        a = A[:, :, [unseen_item]]
+        b = B[:, :, [unseen_item]]
 
-        ki_value = multivariate_ki(optimal_theta, theta_0=0.5, k=len(seen_items),a=a, b=b, xj=item_response)
+        ki_value = multivariate_ki(optimal_theta, k=len(seen_items),
+                                   a=a, b=b, xj=item_response,
+                                   r=3)
 
         ki_values.append(ki_value)
-
+    
     '''
-    # batched
-    print('passed')
+    # batched: looks like you cannot do batched integration. 
+    # However, parallel processing (i.e. multithreading) might be possible
+
     item_response = responses_test[unseen_items_scenario]
 
-    a = A[0, 0, unseen_items_scenario]
-    b = B[0, 0, unseen_items_scenario]
+    a = A[:, :, unseen_items_scenario]
+    b = B[:, :, unseen_items_scenario]
 
-    ki_values = multivariate_ki(optimal_theta, theta_0=0.5, k=len(seen_items),a=a, b=b, xj=item_response)
+    ki_values = multivariate_ki(optimal_theta, k=len(seen_items),
+                                   a=a, b=b, xj=item_response,
+                                   r=8)
     '''
-      
 
     next_item = unseen_items_scenario[np.argmax(ki_values)]
 

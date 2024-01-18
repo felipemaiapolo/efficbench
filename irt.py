@@ -95,7 +95,6 @@ def estimate_ability_parameters(responses_test, seen_items, A, B, theta_init=Non
     # Define the negative log likelihood function
     def neg_log_like(x):
         P = item_curve(x.reshape(1, D, 1), A[:, :, seen_items], B[:, :, seen_items]).squeeze()
-
         log_likelihood = np.sum(responses_test[seen_items] * np.log(P + eps) + (1 - responses_test[seen_items]) * np.log(1 - P + eps))
         return -log_likelihood
     

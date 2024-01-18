@@ -420,22 +420,3 @@ def plot_agg_results(results, scenarios, methods):
     plt.legend(handles=legend_elements)
     #plt.savefig(f'plots/boxplot_metric-{metric}_scenario-{scenario}-{typ}.png', bbox_inches='tight', dpi=300, transparent=True)
     plt.show()
-
-# ADDED FROM OLDER COMMITS
-
-def update_accs_naive(key, responses_test, row_to_hide, scenarios_choosen, scenarios_position, seen_items, accs, number_item):
-    for scenario in scenarios_choosen:
-        # Calculate the mean of the responses for the seen items in the current scenario
-        mean_responses = responses_test[[s for s in seen_items if s in scenarios_position[scenario]]].mean()
-        # Update the accs dictionary for random naive scenario
-        accs[row_to_hide][number_item][key][scenario].append(mean_responses)
-        
-def update_accs_irt(key, scores_test, responses_test, row_to_hide, scenarios_choosen, scenarios_position, seen_items, unseen_items, A, B, new_theta, accs, number_item):
-    D = A.shape[1]
-    for scenario in scenarios_choosen:
-        seen_responses = scores_test[[s for s in seen_items if s in scenarios_position[scenario]]]
-        alpha = seen_responses.shape[0]/len(scenarios_position[scenario])
-        if alpha == 0:first_part = 0
-        else:first_part = alpha * seen_responses.mean()
-        second_part = (1 - alpha) * item_curve(new_theta.reshape(1, D, 1), A, B)[0, [u for u in unseen_items if u in scenarios_position[scenario]]].mean()
-        accs[row_to_hide][number_item][key][scenario].append(first_part + second_part)
