@@ -270,20 +270,22 @@ def compute_acc_irt(scenario, scores_test, scenarios_position, seen_items, unsee
     
     
     # Determine the weighting parameter if not provided (PIRT case)
-    if lambd == None: lambd = np.round(seen_responses.shape[0]/len(scenarios_position[scenario]),2)
+    if lambd == None: lambd = seen_responses.shape[0]/len(scenarios_position[scenario])
     
     D = A.shape[1] # The number of dimensions in the IRT model
     
     # Compute the first part of the accuracy equation based on seen items
     if lambd == 0: first_part = 0
-    else: first_part = lambd * (item_weights*seen_responses).sum()
+    else: first_part = (item_weights*seen_responses).sum()
 
     # Compute the second part of the accuracy equation based on unseen items (and IRT model)
+    irt_part = (balance_weights*item_curve(theta.reshape(1, D, 1), A, B))[0, [u for u in unseen_items if u in scenarios_position[scenario]]].mean()
     if thresh==None:
-        second_part = (1 - lambd) * (balance_weights*item_curve(theta.reshape(1, D, 1), A, B))[0, [u for u in unseen_items if u in scenarios_position[scenario]]].mean()
+        second_part = irt_part
     else:
-        second_part = (1 - lambd) * (balance_weights*(item_curve(theta.reshape(1, D, 1), A, B)>=thresh).astype(float))[0, [u for u in unseen_items if u in scenarios_position[scenario]]].mean()
-    return first_part + second_part
+        lambd_pirt = seen_responses.shape[0]/len(scenarios_position[scenario])
+        second_part = lambd_pirt * seen_responses.mean() + (1 - lambd_pirt) * irt_part
+    return lambd * first_part + (1 - lambd) * second_part
 
 
 def update_results(key, scores_test, row_to_hide, chosen_scenarios, scenarios_position, accs, results, number_item):

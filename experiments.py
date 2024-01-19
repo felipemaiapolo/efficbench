@@ -48,7 +48,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
     - A dictionary containing the updated results.
     """
     
-    assert bench in ['irt_helm', 'irt_lb', 'irt_mmlu']
+    assert bench in ['irt_helm', 'irt_lb', 'irt_lb_perf', 'irt_mmlu']
     
     lambds = [None] + np.round(np.linspace(0,1,10),2).tolist()  # Lambda values to consider
     number_items = [10, 25, 50, 75, 100, 150]  # Number of items to consider in evaluations
@@ -75,7 +75,13 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
             balance_weights[scenarios_position['civil_comments']] = scores[:,scenarios_position['civil_comments']].max(axis=0)
             #(balance_weights==0).sum(axis=0) verifying that no item had weight 0 (the output should be zero)
             scores[:,scenarios_position['civil_comments']] = (scores[:,scenarios_position['civil_comments']]>0).astype(float)
-
+        if 'mmlu' in chosen_scenarios:
+            N = len(scenarios_position['mmlu'])
+            n_sub = len(scenarios['mmlu'])
+            for sub in scenarios['mmlu']:
+                n_i = len(subscenarios_position['mmlu'][sub])
+                balance_weights[subscenarios_position['mmlu'][sub]] = N/(n_sub*n_i)             
+        
         # Create training and test sets by hiding specific rows
         scores_train = scores[[i for i in range(scores.shape[0]) if i not in rows_to_hide]]
         scores_test = scores[[i for i in range(scores.shape[0]) if i in rows_to_hide]]
@@ -202,9 +208,6 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         if sampling['anchor_sampling']==True:
             print("\niii) running anchor points")
             for number_item in tqdm(number_items):
-                
-                _, anchor_weights, seen_items, unseen_items = get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, random_seed = 0)
-                
                 for it in range(iterations):
                     
                     _, anchor_weights, seen_items, unseen_items = get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, random_seed = it)
@@ -315,9 +318,6 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
             E = np.vstack((A.squeeze(), B.reshape((1,-1)))) #embeddings
 
             for number_item in tqdm(number_items):
-                
-                _, anchor_weights, seen_items, unseen_items = get_anchor(E, chosen_scenarios, scenarios_position, number_item, random_seed = 0)
-                
                 for it in range(iterations):
                     _, anchor_weights, seen_items, unseen_items = get_anchor(E, chosen_scenarios, scenarios_position, number_item, random_seed = it)
                     
