@@ -78,13 +78,14 @@ def select_initial_adaptive_items(A, B, Theta, number_item, try_size=2000, seed=
 
 def run_adaptive_selection(responses_test, seen_items, unseen_items, scenarios_choosen, scenarios_position, A, B, mats, target_count, balance=False, ki=False):
     
-    assert len(seen_items) <= target_count
-    count = len(seen_items)
-
+    count = 0
+    scenario_counts = {scenario: 0 for scenario in scenarios_choosen}
     while True:
         for scenario in scenarios_choosen:
+            scenario_counts[scenario] += 1
             if count >= target_count:
-                return seen_items, unseen_items 
+                item_weights = {scenario: np.ones(final_count)/final_count for scenario, final_count in scenario_counts.items()}
+                return item_weights, seen_items, unseen_items 
             
             if not ki:
                 seen_items, unseen_items = select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance)
@@ -150,10 +151,10 @@ def select_next_adaptive_item_KI(responses_test,
         #limits = [integration_bounds(th, k, r) for th in theta.squeeze()]
         limits = [integration_bounds(theta_hat, k, r)]
 
-        def integrand3(theta_0, theta_hat, xj, a, b):
+        def integrand(theta_0, theta_hat, xj, a, b):
             return kl_divergence(theta_0, theta_hat, xj, a, b)
 
-        ki, _ = quad(integrand3, limits[0][0], limits[0][1], args=(theta_hat, xj, a, b))
+        ki, _ = quad(integrand, limits[0][0], limits[0][1], args=(theta_hat, xj, a, b))
         #ki, _ = nquad(integrand, limits)
 
         return ki
@@ -166,7 +167,6 @@ def select_next_adaptive_item_KI(responses_test,
         unseen_items_scenario = unseen_items
 
     optimal_theta = estimate_ability_parameters(responses_test, seen_items, A, B)
-
     
     ki_values = []
     for unseen_item in unseen_items_scenario:
@@ -319,7 +319,7 @@ def get_anchor_points_weights(scores_train, scenarios_position, scenario, number
     
     return anchor_points, anchor_weights
 
-def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, responses_test, scores_train, scenarios_position, A, B):
+def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, responses_test, scores_train, scenarios_position, A, B, inital_items=None):
     item_weights_dic, seen_items_dic, unseen_items_dic = {}, {}, {}
 
     for it in range(iterations):
@@ -331,8 +331,19 @@ def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scena
 
         elif sampling_name == 'anchor-irt':
             _, item_weights, seen_items, unseen_items = get_anchor(np.vstack((A.squeeze(), B.reshape((1,-1)))), chosen_scenarios, scenarios_position, number_item, random_seed=it)
+        elif sampling_name == 'adaptive':
+            continue
 
         item_weights_dic[it], seen_items_dic[it], unseen_items_dic[it] = item_weights, seen_items, unseen_items
+
+    if sampling_name == 'adaptive':
+        seen_items, unseen_items, mats = inital_items
+        for n_model, responses in enumerate(responses_test):
+            item_weights_dic[n_model], seen_items_dic[n_model], unseen_items_dic[n_model] = run_adaptive_selection(responses, seen_items, unseen_items, 
+                                                                                                                    chosen_scenarios, 
+                                                                                                                    scenarios_position, A, B, 
+                                                                                                                    mats, number_item, 
+                                                                                                                    balance=False, ki=False)
 
     return item_weights_dic, seen_items_dic, unseen_items_dic
 
