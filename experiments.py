@@ -34,10 +34,8 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
     number_items = [10, 25, 50, 75, 100, 150]  # Number of items to consider in evaluations
 
     cpu = mp.cpu_count()  # Number of available CPU cores
-    #epochs = 2000  # Number of epochs for IRT model training (package default is 2000)
+    epochs = 2000  # Number of epochs for IRT model training (package default is 2000)
     lr = .1  # Learning rate for IRT model training (package default is .1)
-    balance = True
-    APPLY_WEIGHING = True
 
     # Iterate through each set of rows to hide
     accs_true = {}  # Initialize a dictionary to hold real accuracies
@@ -96,7 +94,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         train_ind = [i for i in range(responses_train.shape[0]) if i not in val_ind]
         
         # Create IRT dataset for validation and train IRT models
-        dataset_name = f'data/{bench}/rows-{rows_to_hide_str}_scenario-{scenario_name}_val_{JOB_ID}.jsonlines'
+        dataset_name = f'data/{bench}/rows-{rows_to_hide_str}_scenario-{scenario_name}_val.jsonlines'
         create_irt_dataset(responses_train[train_ind], dataset_name)
 
         errors = []  # Initialize a list to hold validation errors
@@ -104,7 +102,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         print("\ni) choosing optimal D")
         for D in tqdm(Ds):
             # Train IRT model for the current dimension (D)
-            model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val_{JOB_ID}/'
+            model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val/'
             train_irt_model(dataset_name, model_name, D, lr, epochs, device)
             # Load trained IRT model parameters
             A, B, Theta = load_irt_parameters(model_name)
@@ -157,7 +155,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         dataset_name = f'data/{bench}/row-{rows_to_hide_str}_scenario-{scenario_name}.jsonlines'
 
         create_irt_dataset(responses_train, dataset_name)
-        model_name = f'models/{bench}/row-{rows_to_hide_str}_D-validate_scenario-{scenario_name}_{JOB_ID}/'
+        model_name = f'models/{bench}/row-{rows_to_hide_str}_D-validate_scenario-{scenario_name}'
         train_irt_model(dataset_name, model_name, D, lr, epochs, device)
 
         # Load the final IRT model
