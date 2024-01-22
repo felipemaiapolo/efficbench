@@ -56,9 +56,27 @@ def item_curve(theta, a, b):
     Returns:
     - The probability of a correct response given the item parameters and subject ability.
     """
-    
     z = np.clip(a*theta - b, -30, 30).sum(axis=1)
     return sigmoid(z)
+
+
+def item_response_function(xj, theta, a, b):
+    """
+    Compute the pdf for the Bernoulli distribution of an item response.
+    
+    Parameters:
+    - xj: The response of the subject (0 or 1).
+    - theta: The ability parameter of the subject.
+    - a: The discrimination parameter of the item.
+    - b: The difficulty parameter of the item.
+    
+    Returns:
+    - The pdf value for the given response.
+    """
+    a = np.array([[[a]]]) if type(a) == np.float64 else a
+    b = np.array([[[b]]]) if type(b) == np.float64 else b
+    p_correct = item_curve(theta, a, b)
+    return np.power(p_correct, xj) * np.power(1 - p_correct, 1 - xj)
 
 def prepare_data(chosen_scenarios, scenarios, data):
     
@@ -214,3 +232,4 @@ lb_scenarios = {'harness_truthfulqa_mc_0':['harness_truthfulqa_mc_0'],
                          'harness_hendrycksTest_us_foreign_policy_5', 
                          'harness_hendrycksTest_virology_5', 
                          'harness_hendrycksTest_world_religions_5']}
+

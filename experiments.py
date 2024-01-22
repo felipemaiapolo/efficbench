@@ -10,6 +10,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
                        scenarios, set_of_rows, Ds, iterations, device, bench, 
                        sampling_names = ['random', 'anchor', 'anchor-irt']):
 
+
     """
     Evaluates scenarios by training and validating IRT models, then computing accuracies and updating results.
     
@@ -33,8 +34,10 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
     number_items = [10, 25, 50, 75, 100, 150]  # Number of items to consider in evaluations
 
     cpu = mp.cpu_count()  # Number of available CPU cores
-    epochs = 2000  # Number of epochs for IRT model training (package default is 2000)
+    #epochs = 2000  # Number of epochs for IRT model training (package default is 2000)
     lr = .1  # Learning rate for IRT model training (package default is .1)
+    balance = True
+    APPLY_WEIGHING = True
 
     # Iterate through each set of rows to hide
     accs_true = {}  # Initialize a dictionary to hold real accuracies
@@ -93,7 +96,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         train_ind = [i for i in range(responses_train.shape[0]) if i not in val_ind]
         
         # Create IRT dataset for validation and train IRT models
-        dataset_name = f'data/{bench}/rows-{rows_to_hide_str}_scenario-{scenario_name}_val.jsonlines'
+        dataset_name = f'data/{bench}/rows-{rows_to_hide_str}_scenario-{scenario_name}_val_{JOB_ID}.jsonlines'
         create_irt_dataset(responses_train[train_ind], dataset_name)
 
         errors = []  # Initialize a list to hold validation errors
@@ -101,7 +104,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         print("\ni) choosing optimal D")
         for D in tqdm(Ds):
             # Train IRT model for the current dimension (D)
-            model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val/'
+            model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val_{JOB_ID}/'
             train_irt_model(dataset_name, model_name, D, lr, epochs, device)
             # Load trained IRT model parameters
             A, B, Theta = load_irt_parameters(model_name)
@@ -152,8 +155,9 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         # Save the final dataset and train the final IRT model
         print("\niii) fitting final IRT model")
         dataset_name = f'data/{bench}/row-{rows_to_hide_str}_scenario-{scenario_name}.jsonlines'
+
         create_irt_dataset(responses_train, dataset_name)
-        model_name = f'models/{bench}/row-{rows_to_hide_str}_D-validate_scenario-{scenario_name}/'
+        model_name = f'models/{bench}/row-{rows_to_hide_str}_D-validate_scenario-{scenario_name}_{JOB_ID}/'
         train_irt_model(dataset_name, model_name, D, lr, epochs, device)
 
         # Load the final IRT model
@@ -163,7 +167,6 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         item_weights_dic, seen_items_dic, unseen_items_dic = {}, {}, {}
         for sampling_name in tqdm(sampling_names):
             item_weights_dic[sampling_name], seen_items_dic[sampling_name], unseen_items_dic[sampling_name] = {}, {}, {}
-
             pool = mp.Pool(cpu)
             samples = pool.starmap(sample_items, [(number_item, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, responses_test, scores_train, scenarios_position, A, B) for number_item in number_items])
             pool.close()
