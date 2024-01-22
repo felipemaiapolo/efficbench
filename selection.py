@@ -78,7 +78,9 @@ def select_initial_adaptive_items(A, B, Theta, number_item, try_size=2000, seed=
 
 def run_adaptive_selection(responses_test, seen_items, unseen_items, scenarios_choosen, scenarios_position, A, B, mats, target_count, balance=False, ki=False):
     
-    count = 0
+    assert len(seen_items) <= target_count
+    count = len(seen_items)
+    
     scenario_counts = {scenario: 0 for scenario in scenarios_choosen}
     while True:
         for scenario in scenarios_choosen:
