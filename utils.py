@@ -233,3 +233,6 @@ lb_scenarios = {'harness_truthfulqa_mc_0':['harness_truthfulqa_mc_0'],
                          'harness_hendrycksTest_virology_5', 
                          'harness_hendrycksTest_world_religions_5']}
 
+alpaca_scenarios = {#'alpaca_v1':['alpaca_v1'],
+                    'alpaca_v2':['alpaca_v2'],
+}

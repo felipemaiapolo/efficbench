@@ -4,13 +4,14 @@ from glob import glob
 import pickle as pkl
 import numpy as np
 
-RAW_DATA_PATH = "./results/"
+RAW_DATA_PATH = "./data/alpaca_results_raw"
 ALPACA_EVAL_VERSION = "2.0"
 RESULTS_FOLDERS = {"1.0": "alpaca_eval_gpt4",
                    "2.0": "weighted_alpaca_eval_gpt4_turbo",
                    }
 SHIFT_VALUE = 1 # 0 for no shifting, 1 for shifting into [0,1]
 
+version = 'alpaca_v2' if ALPACA_EVAL_VERSION == '2.0' else 'alpaca_v1'
 directories = glob(os.path.join(RAW_DATA_PATH,  "*"))
 models = [path.split(os.sep)[-1] for path in directories]
 
@@ -31,9 +32,11 @@ for model in models:
 models = [model for model in models if model not in list(exceptions.keys())]
 instructions = [all_data[0][j]["instruction"] for j, _ in enumerate(all_data[0])]
 
-data_final =  {"correctness": [],
-               "missing_data": [],
-}
+data_final =  {version: {
+                         "correctness": [],
+                         "missing_data": [],
+                         },
+                        }
 
 for i, _ in enumerate(all_data):
     model_correctness = []
@@ -52,16 +55,15 @@ for i, _ in enumerate(all_data):
         missing_data.append(missing)
         model_correctness.append(correctness)
     
-    data_final["correctness"].append(model_correctness)
-    data_final["missing_data"].append(missing_data)
+    data_final[version]["correctness"].append(model_correctness)
+    data_final[version]["missing_data"].append(missing_data)
 
-data_final["correctness"] = np.array(data_final["correctness"])
-data_final["missing_data"] = np.array(data_final["missing_data"])
+data_final[version]["correctness"] = np.array(data_final[version]["correctness"])
+data_final[version]["missing_data"] = np.array(data_final[version]["missing_data"])
 
 alpaca_eval_results = {"data": data_final,
                        "models": models,
                        "instructions": instructions}
 
-with open(f'alpaca_eval_results_v{ALPACA_EVAL_VERSION}.pickle', 'wb') as f:
+with open(f'{version}.pickle', 'wb') as f:
     pkl.dump(alpaca_eval_results, f)
-
