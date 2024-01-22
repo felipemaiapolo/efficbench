@@ -5,7 +5,7 @@ from tqdm import tqdm
 from irt import *
 from utils import *
 
-def get_seen_unseen_items(scenarios_choosen, scenarios, number_item, subscenarios_position, responses_test):
+def get_random(scenarios_choosen, scenarios, number_item, subscenarios_position, responses_test, random_seed):
     
     """
     Stratified sample items (seen_items). 'unseen_intems' gives the complement.
@@ -23,6 +23,8 @@ def get_seen_unseen_items(scenarios_choosen, scenarios, number_item, subscenario
     - unseen_items: A list of item indices that the subject has not been exposed to.
     """
     
+    random.seed(random_seed)
+    
     def shuffle_list(lista):
         """
         Shuffles a list in place and returns the shuffled list.
@@ -37,8 +39,13 @@ def get_seen_unseen_items(scenarios_choosen, scenarios, number_item, subscenario
 
     
     seen_items = []  # Initialize an empty list to hold the indices of seen items.
+    item_weights = {}
+    
     # Iterate through each chosen scenario to determine the seen items.
     for scenario in scenarios_choosen:
+        
+        item_weights[scenario] = np.ones(number_item)/number_item
+        
         # Allocate the number of items to be seen in each subscenario.
         number_items_sub = np.zeros(len(scenarios[scenario])).astype(int)
         number_items_sub += number_item // len(scenarios[scenario])
@@ -54,7 +61,7 @@ def get_seen_unseen_items(scenarios_choosen, scenarios, number_item, subscenario
     # Determine the unseen items by finding all item indices that are not in the seen items list.
     unseen_items = [i for i in range(responses_test.shape[1]) if i not in seen_items]
 
-    return seen_items, unseen_items
+    return item_weights, seen_items, unseen_items
 
 def get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, random_seed):
     """
@@ -110,24 +117,19 @@ def get_anchor_points_weights(scores_train, scenarios_position, scenario, number
     
     return anchor_points, anchor_weights
 
-def get_disc_items(responses_train, number_items, chosen_scenarios, rows_to_hide_str, scenarios_position, device, bench):
-    # First part: Dataset creation and model training
-    for scenario in tqdm(chosen_scenarios):
-        dataset_name = f'data/{bench}/rows-{rows_to_hide_str}_scenario-{scenario}_IRT-1D.jsonlines'
-        create_irt_dataset(responses_train[:,scenarios_position[scenario]], dataset_name)
-        
-        model_name = f'models/{bench}/model-2pl_rows-{rows_to_hide_str}_D-1_scenario-{scenario}_IRT-1D/'
-        with SuppressPrints(): os.system(f"py-irt train '2pl' {dataset_name} {model_name} --device {device} --priors 'vague' --seed 42 --deterministic --log-every 2000")
-    
-    # Second part: Extracting and processing parameters
-    seen_items = {}
-    for number_item in number_items:
-        seen_items[number_item] = []
-        for scenario in chosen_scenarios:
-            model_name = f'models/{bench}/model-2pl_rows-{rows_to_hide_str}_D-1_scenario-{scenario}_IRT-1D/'
-            with open(model_name + 'best_parameters.json') as f:
-                A = np.array(json.load(f)['disc'])
-            
-            seen_items[number_item] += list(np.array(scenarios_position[scenario])[np.argsort(-A)[:number_item]])
-    
-    return seen_items
+def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, responses_test, scores_train, scenarios_position, A, B):
+    item_weights_dic, seen_items_dic, unseen_items_dic = {}, {}, {}
+
+    for it in range(iterations):
+        if sampling_name == 'random':
+            item_weights, seen_items, unseen_items = get_random(chosen_scenarios, scenarios, number_item, subscenarios_position, responses_test, random_seed=it)
+
+        elif sampling_name == 'anchor':
+            _, item_weights, seen_items, unseen_items = get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, random_seed=it)
+
+        elif sampling_name == 'anchor-irt':
+            _, item_weights, seen_items, unseen_items = get_anchor(np.vstack((A.squeeze(), B.reshape((1,-1)))), chosen_scenarios, scenarios_position, number_item, random_seed=it)
+
+        item_weights_dic[it], seen_items_dic[it], unseen_items_dic[it] = item_weights, seen_items, unseen_items
+
+    return item_weights_dic, seen_items_dic, unseen_items_dic

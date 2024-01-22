@@ -1,35 +1,14 @@
 from tqdm import tqdm
 import multiprocessing as mp
+import time
 from irt import *
 from selection import *
 from utils import *
-
-def calculate_gpirt_scores(it, number_items, chosen_scenarios, scenarios, subscenarios_position, responses_test, train_ind, val_ind, scores_train, scenarios_position, E):
-    out = []
-    for number_item in number_items:
-        out.append([[],[],[]])
-        random.seed(it)
-        # Random
-        seen_items, unseen_items = get_seen_unseen_items(chosen_scenarios, scenarios, number_item, subscenarios_position, responses_test)
-        for j in range(len(val_ind)):
-            out[-1][0].append([scores_train[val_ind,:][j][[s for s in seen_items if s in scenarios_position[scenario]]].mean() for scenario in chosen_scenarios])
-
-        # Anchor
-        _, anchor_weights, seen_items, unseen_items = get_anchor(scores_train[train_ind,:], chosen_scenarios, scenarios_position, number_item, random_seed=it)
-        for j in range(len(val_ind)):
-            out[-1][1].append([(anchor_weights[scenario] * scores_train[val_ind,:][j][[s for s in seen_items if s in scenarios_position[scenario]]]).sum() for scenario in chosen_scenarios])
-
-        # Anchor-irt
-        _, anchor_weights, seen_items, unseen_items = get_anchor(E, chosen_scenarios, scenarios_position, number_item, random_seed=it)
-        for j in range(len(val_ind)):
-            out[-1][2].append([(anchor_weights[scenario] * scores_train[val_ind,:][j][[s for s in seen_items if s in scenarios_position[scenario]]]).sum() for scenario in chosen_scenarios])
-
-    return out
+from acc import *
 
 def evaluate_scenarios(data, scenario_name, chosen_scenarios, 
                        scenarios, set_of_rows, Ds, iterations, device, bench, 
-                       sampling = {'random_sampling':True,'anchor_sampling':False,
-                                   'anchor-irt_sampling':False,'disc_sampling':False}):
+                       sampling_names = ['random', 'anchor', 'anchor-irt']):
 
     """
     Evaluates scenarios by training and validating IRT models, then computing accuracies and updating results.
@@ -49,21 +28,20 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
     """
     
     assert bench in ['irt_helm', 'irt_lb', 'irt_lb_perf', 'irt_mmlu']
+    assert np.mean([s in ['random', 'anchor', 'anchor-irt'] for s in sampling_names]) == 1
     
-    lambds = [None] + np.round(np.linspace(0,1,10),2).tolist()  # Lambda values to consider
     number_items = [10, 25, 50, 75, 100, 150]  # Number of items to consider in evaluations
 
     cpu = mp.cpu_count()  # Number of available CPU cores
     epochs = 2000  # Number of epochs for IRT model training (package default is 2000)
     lr = .1  # Learning rate for IRT model training (package default is .1)
 
-    accs = {}  # Initialize a dictionary to hold accuracies
-    results = {}  # Initialize a dictionary to hold results
-
     # Iterate through each set of rows to hide
+    accs_true = {}  # Initialize a dictionary to hold real accuracies
+    out = [] # To store intermediate results
     for rows_to_hide in set_of_rows:
-        rows_to_hide_str = ':'.join([str(r) for r in rows_to_hide])
-
+        rows_to_hide_str = ':'.join([str(r) for r in rows_to_hide])[:30] + ':'.join([str(r) for r in rows_to_hide])[-30:]
+   
         print(f"\nEvaluating models {rows_to_hide}")
         
         # Prepare data and scenarios
@@ -104,8 +82,14 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         scores_test = scores[[i for i in range(scores.shape[0]) if i in rows_to_hide]]
         #print("shape of scores=",scores.shape, "shape of scores train=",scores_train.shape,"shape of scores test=",scores_test.shape)
         
+        # Storing true accs to use later
+        for j in range(len(rows_to_hide)):
+            accs_true[rows_to_hide[j]] = {}
+            for scenario in chosen_scenarios:
+                accs_true[rows_to_hide[j]][scenario] = scores_test[j, scenarios_position[scenario]].mean()
+        
         # Choosing D through validation
-        val_ind = list(range(int(responses_train.shape[0]/3)))
+        val_ind = list(range(0,responses_train.shape[0],5)) #list(range(int(responses_train.shape[0]/3)))
         train_ind = [i for i in range(responses_train.shape[0]) if i not in val_ind]
         
         # Create IRT dataset for validation and train IRT models
@@ -125,7 +109,12 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
             seen_items = list(range(0, responses_train.shape[1], 2))
             unseen_items = list(range(1, responses_train.shape[1], 2))
             # Estimate ability parameters for the validation set
-            thetas = [estimate_ability_parameters(responses_train[val_ind][j], seen_items, A, B) for j in range(len(val_ind))]
+            #thetas = [estimate_ability_parameters(responses_train[val_ind][j], seen_items, A, B) for j in tqdm(range(len(val_ind)))]
+            print(" - fit. theta in the val set")
+            pool = mp.Pool(cpu)
+            thetas = pool.starmap(estimate_ability_parameters, [(responses_train[val_ind][j], seen_items, A, B) for j in range(len(val_ind))])
+            pool.close()
+            pool.join()
 
             # Compute validation errors for each scenario and update the errors list (in the end, we give the same weight for all scenarios)
             errors2.append([])
@@ -133,6 +122,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
                 ind = [u for u in unseen_items if u in scenarios_position[scenario]]
                 errors2[-1].append(np.mean([abs((balance_weights*item_curve(thetas[j], A, B))[0,ind].mean()-scores_train[val_ind][j,ind].mean())for j in range(len(val_ind))]))
             errors.append(np.mean(errors2[-1]))
+            print(errors[-1])
 
         # Choose the simplest model (D) that is not far from the best model based on validation errors
         ind_D = np.argmax(np.array(errors)-np.min(errors)<.0025)
@@ -143,36 +133,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         print("\nii) choosing optimal lambdas")
         
         opt_lambds = {'random_gpirt': {}, 'anchor_gpirt': {}, 'anchor-irt_gpirt': {}}  # Initialize a dictionary to hold optimal lambda values
-        
-        if False:
-            model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val/'
-            A, B, Theta = load_irt_parameters(model_name)
-            E = np.vstack((A.squeeze(), B.reshape((1,-1))))
-
-            pool = mp.Pool(cpu)
-            out = pool.starmap(calculate_gpirt_scores, [(it+1000, number_items, chosen_scenarios, scenarios, subscenarios_position, responses_test, train_ind, val_ind, scores_train, scenarios_position, E) for it in range(2*iterations)])
-            pool.close()
-            pool.join()
-
-            vs = {'random_gpirt': {}, 'anchor_gpirt': {}, 'anchor-irt_gpirt':{}}
-            for j,key in enumerate(vs.keys()):
-                vs[key] = {}
-                for k,scenario in enumerate(chosen_scenarios):
-                    vs[key][scenario] = {}
-                    for i,number_item in enumerate(number_items):
-                        vs[key][scenario][number_item] = np.median(np.array(out).var(axis=0), axis=2)[i,j,k]
-
-            bs = {}
-            for i,scenario in enumerate(chosen_scenarios):
-                bs[scenario] = np.mean(errors2[ind_D][i]) 
-
-            
-            for scenario in tqdm(chosen_scenarios):
-                for key in opt_lambds.keys():
-                    opt_lambds[key][scenario] = {}
-                    for number_item in number_items: 
-                        opt_lambds[key][scenario][number_item] = get_lambda(bs[scenario], vs[key][scenario][number_item])
-
+      
         vs = {}
         bs = {}
         for i,scenario in enumerate(chosen_scenarios):
@@ -188,9 +149,8 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
                     else:
                         opt_lambds[key][scenario][number_item] = get_lambda(bs[scenario], vs[scenario]/(4*number_item))
 
-        print(opt_lambds)
-        
         # Save the final dataset and train the final IRT model
+        print("\niii) fitting final IRT model")
         dataset_name = f'data/{bench}/row-{rows_to_hide_str}_scenario-{scenario_name}.jsonlines'
         create_irt_dataset(responses_train, dataset_name)
         model_name = f'models/{bench}/row-{rows_to_hide_str}_D-validate_scenario-{scenario_name}/'
@@ -198,152 +158,48 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
 
         # Load the final IRT model
         A, B, Theta = load_irt_parameters(model_name)
-        #print(" - debiasing IRT")
-        #A, B = debias_irt(A, B, Theta, responses_train)
+
+        print("\niv) sampling")
+        item_weights_dic, seen_items_dic, unseen_items_dic = {}, {}, {}
+        for sampling_name in tqdm(sampling_names):
+            item_weights_dic[sampling_name], seen_items_dic[sampling_name], unseen_items_dic[sampling_name] = {}, {}, {}
+
+            pool = mp.Pool(cpu)
+            samples = pool.starmap(sample_items, [(number_item, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, responses_test, scores_train, scenarios_position, A, B) for number_item in number_items])
+            pool.close()
+            pool.join()
+
+            for i,number_item in enumerate(number_items):
+                item_weights_dic[sampling_name][number_item], seen_items_dic[sampling_name][number_item], unseen_items_dic[sampling_name][number_item] = samples[i]
+                
+            
+        print("\nv) computing accuracies")
+        start_time = time.time()
+        pool = mp.Pool(cpu)
+        out += pool.starmap(calculate_accuracies, [(j, sampling_names, item_weights_dic, seen_items_dic, unseen_items_dic, A, B, scores_test, responses_test, scenarios_position, chosen_scenarios, balance_weights, opt_lambds, rows_to_hide) for j in range(len(rows_to_hide))])
+        pool.close()
+        pool.join()
+        elapsed_time = np.round(time.time()-start_time)
+        print(f" - finished in {elapsed_time} seconds")
         
-        # Initialize storage space in accuracies and results dictionaries
-        [create_space_accs_results(accs, results, r, number_items, chosen_scenarios) for r in rows_to_hide]
+    ### Final results
+    
+    accs_hat = {}
+    results = {}
+    for item in out:
+        key = list(item.keys())[0]
+        accs_hat[key] = item[key]
 
-        ### Running anchor evaluation for each hidden row ###
-        if sampling['anchor_sampling']==True:
-            print("\niii) running anchor points")
-            for number_item in tqdm(number_items):
-                for it in range(iterations):
-                    
-                    _, anchor_weights, seen_items, unseen_items = get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, random_seed = it)
-                    
-                    for j in range(len(rows_to_hide)):
-                        
-                        ### Naive approach
-                        # Update accuracies for the naive approach
+    # Update results with the mean absolute difference for each approach
+    for rows_to_hide in set_of_rows:
+        for j in range(len(rows_to_hide)):
+            results[rows_to_hide[j]] = {}
+            for number_item in number_items:
+                results[rows_to_hide[j]][number_item] = {}
+                for sampling_name in sampling_names:
+                    for estimators in ['naive', 'pirt', 'cirt', 'gpirt']:
+                        results[rows_to_hide[j]][number_item][sampling_name+'_'+estimators] = {}
                         for scenario in chosen_scenarios:
-                            accs[rows_to_hide[j]][number_item]['anchor_naive'][scenario].append((anchor_weights[scenario]*scores_test[j][[s for s in seen_items if s in scenarios_position[scenario]]]).sum())
+                            results[rows_to_hide[j]][number_item][sampling_name+'_'+estimators][scenario] = np.abs(np.array(accs_hat[rows_to_hide[j]][number_item][sampling_name+'_'+estimators][scenario]) - accs_true[rows_to_hide[j]][scenario])
 
-                        ### IRT approach
-                        # Estimate ability parameters for the test set
-                        new_theta = estimate_ability_parameters(responses_test[j], seen_items, A, B)
-
-                        # Update accuracies for the IRT and G-PIRT approaches
-                        for scenario in chosen_scenarios:
-                            accs[rows_to_hide[j]][number_item]['anchor_cirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=None, item_weights=anchor_weights[scenario], thresh=.5))
-                            accs[rows_to_hide[j]][number_item]['anchor_pirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=None, item_weights=anchor_weights[scenario]))
-                            accs[rows_to_hide[j]][number_item]['anchor_gpirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=opt_lambds['anchor_gpirt'][scenario][number_item], item_weights=anchor_weights[scenario]))
-                
-                ### Updating results
-                for j in range(len(rows_to_hide)): 
-                    # Update results with the mean absolute difference for each approach
-                    update_results('anchor_naive', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-                    update_results('anchor_cirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-                    update_results('anchor_pirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-                    update_results('anchor_gpirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-
-
-        if sampling['random_sampling']==True:
-            ### Running random evaluation for each hidden row ###
-            print("\niv) running random eval")
-            for number_item in tqdm(number_items):
-                
-                # Running evaluations with different seeds (i.e., different seen_items)
-                for it in range(iterations):
-                    
-                    random.seed(it)
-                    
-                    # Determine seen and unseen items for the current evaluation
-                    seen_items, unseen_items = get_seen_unseen_items(chosen_scenarios, scenarios, number_item, subscenarios_position, responses_test)
-                        
-                    for j in range(len(rows_to_hide)):
-
-                        ### Naive approach
-                        # Update accuracies for the naive approach
-                        for scenario in chosen_scenarios:
-                            accs[rows_to_hide[j]][number_item]['random_naive'][scenario].append(scores_test[j][[s for s in seen_items if s in scenarios_position[scenario]]].mean())
-
-                        ### IRT approach
-                        # Estimate ability parameters for the test set
-                        new_theta = estimate_ability_parameters(responses_test[j], seen_items, A, B)
-
-                        # Update accuracies for the IRT and G-PIRT approaches
-                        for scenario in chosen_scenarios:
-                            accs[rows_to_hide[j]][number_item]['random_cirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=None, thresh=.5))
-                            accs[rows_to_hide[j]][number_item]['random_pirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=None))
-                            accs[rows_to_hide[j]][number_item]['random_gpirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=opt_lambds['random_gpirt'][scenario][number_item]))
-                
-                ### Updating results
-                for j in range(len(rows_to_hide)):
-
-                    # Update results with the mean absolute difference for each approach
-                    update_results('random_naive', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-                    update_results('random_cirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-                    update_results('random_pirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-                    update_results('random_gpirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-
-        ### Running disc evaluation for each hidden row ###
-        if sampling['disc_sampling']==True:
-            print("\nvi) running disc IRT method")
-
-            seen_items_dic = get_disc_items(responses_train[train_ind], number_items, chosen_scenarios, rows_to_hide_str, scenarios_position, device, bench)
-
-            for number_item in tqdm(number_items):
-                for j in range(len(rows_to_hide)):
-
-                    seen_items = seen_items_dic[number_item]
-                    unseen_items = [i for i in range(responses_train.shape[1]) if i not in seen_items]
-
-                    ### Naive approach
-                    # Update accuracies for the naive approach
-                    for scenario in chosen_scenarios:
-                        accs[rows_to_hide[j]][number_item]['disc_naive'][scenario].append((scores_test[j][[s for s in seen_items if s in scenarios_position[scenario]]]).mean())
-
-                    ### IRT approach
-                    # Estimate ability parameters for the test set
-                    new_theta = estimate_ability_parameters(responses_test[j], seen_items, A, B)
-
-                    # Update accuracies for the IRT and G-PIRT approaches
-                    for scenario in chosen_scenarios:
-                        accs[rows_to_hide[j]][number_item]['disc_cirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=None, item_weights=None, thresh=.5))
-                        accs[rows_to_hide[j]][number_item]['disc_pirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=None, item_weights=None))
-                        accs[rows_to_hide[j]][number_item]['disc_gpirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=opt_lambds['disc_gpirt'][scenario][number_item], item_weights=None))
-
-                    ### Updating results
-                    # Update results with the mean absolute difference for each approach
-                    update_results('disc_naive', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-                    update_results('disc_cirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-                    update_results('disc_pirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-                    update_results('disc_gpirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-        
-        ### Running anchor evaluation for each hidden row ###
-        if sampling['anchor-irt_sampling']==True:
-            print("\nv) running anchor points with IRT embeddings")
-
-            E = np.vstack((A.squeeze(), B.reshape((1,-1)))) #embeddings
-
-            for number_item in tqdm(number_items):
-                for it in range(iterations):
-                    _, anchor_weights, seen_items, unseen_items = get_anchor(E, chosen_scenarios, scenarios_position, number_item, random_seed = it)
-                    
-                    for j in range(len(rows_to_hide)):
-
-                        ### Naive approach
-                        # Update accuracies for the naive approach
-                        for scenario in chosen_scenarios:
-                            accs[rows_to_hide[j]][number_item]['anchor-irt_naive'][scenario].append((anchor_weights[scenario]*scores_test[j][[s for s in seen_items if s in scenarios_position[scenario]]]).sum())
-
-                        ### IRT approach
-                        # Estimate ability parameters for the test set
-                        new_theta = estimate_ability_parameters(responses_test[j], seen_items, A, B)
-
-                        # Update accuracies for the IRT and G-PIRT approaches
-                        for scenario in chosen_scenarios:
-                            accs[rows_to_hide[j]][number_item]['anchor-irt_cirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=None, item_weights=anchor_weights[scenario], thresh=.5))
-                            accs[rows_to_hide[j]][number_item]['anchor-irt_pirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=None, item_weights=anchor_weights[scenario]))
-                            accs[rows_to_hide[j]][number_item]['anchor-irt_gpirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=opt_lambds['anchor-irt_gpirt'][scenario][number_item], item_weights=anchor_weights[scenario]))
-
-                ### Updating results
-                for j in range(len(rows_to_hide)):
-                    # Update results with the mean absolute difference for each approach
-                    update_results('anchor-irt_naive', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-                    update_results('anchor-irt_cirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-                    update_results('anchor-irt_pirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-                    update_results('anchor-irt_gpirt', scores_test[j], rows_to_hide[j], chosen_scenarios, scenarios_position, accs, results, number_item)
-                
-    return results, accs # Return the updated results dictionary
+    return results, accs_hat # Return the updated results dictionary

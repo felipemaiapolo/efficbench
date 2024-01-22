@@ -46,7 +46,7 @@ def train_irt_model(dataset_name, model_name, D, lr, epochs, device):
     """
     
     # Constructing the command string
-    command=f"py-irt train 'multidim_2pl' {dataset_name} {model_name} --dims {D} --lr {lr} --epochs {epochs} --device {device} --priors 'hierarchical' --seed 42 --deterministic --log-every 2000"
+    command=f"py-irt train 'multidim_2pl' {dataset_name} {model_name} --dims {D} --lr {lr} --epochs {epochs} --device {device} --priors 'hierarchical' --seed 42 --deterministic --log-every 200"
     with SuppressPrints():
         os.system(command)
         
