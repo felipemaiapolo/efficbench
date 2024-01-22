@@ -74,17 +74,22 @@ elif bench == 'helm':
                        [14,15,16,17,18,19,20,21,22], #openai
                        [23,24,25,26,27]] #together
     
-else:
+elif bench == 'alpaca':
     #data
-    with open('data/alpaca.pickle', 'rb') as handle:
+    with open('data/alpaca_v2.pickle', 'rb') as handle:
         data = pickle.load(handle)
         
     #scenarios
     scenarios = alpaca_scenarios
     
     #split
-    #?
-    
+    if split == 'iid':
+        set_of_rows = [list(range(0,len(data['models']),4))]
+    else:
+        raise NotImplementedError
+
+else:
+    raise NotImplementedError
 chosen_scenarios = list(scenarios.keys())
 
 
