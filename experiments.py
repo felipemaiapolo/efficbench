@@ -384,6 +384,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
                                 else:
                                     opt_lambds_adaptive[key][scenario][number_item1] = get_lambda(number_item1, bs[scenario], vs[scenario]/2)
 
+
                     # Updating 'accs' and 'results'
                     for scenario in chosen_scenarios:
                         accs[rows_to_hide[j]][number_item]['adaptive_pirt'][scenario].append(compute_acc_irt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, lambd=None, item_weights=None))

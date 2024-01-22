@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ### ALIEN PARTITION
-#SBATCH --job-name=MIRT_WITH_FACTOR_ANALYSIS_ALL_SCENARIOS
+#SBATCH --job-name=run_grid_with_epochs
 #SBATCH  --output=../logs/%x-%j.out 
 #SBATCH  --error=../logs/%x-%j.err 
 #SBATCH  --mem=32G
@@ -16,7 +16,7 @@ module load Miniconda3
 source /home/lweber/anaconda3/etc/profile.d/conda.sh
 conda activate irt2
 
-python ./mirt_helm.py
+python ./mirt_helm_MCAT.py
 
 exit 0
 

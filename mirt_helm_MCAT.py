@@ -79,7 +79,7 @@ with open('data/helm.pickle', 'rb') as handle:
 PATH_TO_RESULTS = './results/MCAT'
 
 device = 'cuda'
-DEV = False
+DEV = True
 
 num_elements = 4
 iterations = 8
@@ -91,9 +91,9 @@ chosen_scenarios = list(scenarios.keys())
 scenario_name = 'full'
 set_of_rows = create_sublists_corrected(list(range(len(data['models']))), num_elements)
 sampling = {'random_sampling':False if DEV else True,
-            'anchor_sampling':True,
-            'anchor-irt_sampling':True,
-            'disc_sampling':True, 
+            'anchor_sampling':False,
+            'anchor-irt_sampling':False,
+            'disc_sampling':False, 
             'adaptive_sampling': True,
             'adaptive-ki_sampling': False}
 
