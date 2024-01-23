@@ -76,24 +76,29 @@ def select_initial_adaptive_items(A, B, Theta, number_item, try_size=2000, seed=
     return seen_items, unseen_items, mats
 
 
-def run_adaptive_selection(responses_test, seen_items, unseen_items, scenarios_choosen, scenarios_position, A, B, mats, target_count, balance=False, ki=False):
+def run_adaptive_selection(responses_test, seen_items, unseen_items, scenarios_choosen, scenarios_position, A, B, mats, num_items, balance=True, ki=False):
     
+    target_count = num_items*len(scenarios_choosen)    
     assert len(seen_items) <= target_count
     count = len(seen_items)
     
     scenario_counts = {scenario: 0 for scenario in scenarios_choosen}
+    for item in seen_items:
+        scenario_item = find_scenario_for_position(scenarios_position, item)
+        scenario_counts[scenario_item] += 1
+
     while True:
         for scenario in scenarios_choosen:
-            scenario_counts[scenario] += 1
+            
             if count >= target_count:
-                item_weights = {scenario: np.ones(final_count)/final_count for scenario, final_count in scenario_counts.items()}
+                item_weights = {scenario: final_count/target_count for scenario, final_count in scenario_counts.items()}
                 return item_weights, seen_items, unseen_items 
             
             if not ki:
-                seen_items, unseen_items = select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance)
+                seen_items, unseen_items, scenario_item = select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance)
             else:
                 seen_items, unseen_items = select_next_adaptive_item_KI(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance)
-
+            scenario_counts[scenario_item] += 1
             count += 1
 
 def select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance):
@@ -116,8 +121,15 @@ def select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario
     next_item = unseen_items_scenario[np.argmax(np.linalg.det(I_seen[None, :, :] + I_unseen))]                    
     seen_items.append(next_item)
     unseen_items.remove(next_item)
+    scenario_item = find_scenario_for_position(scenarios_position, next_item)
 
-    return seen_items, unseen_items
+    return seen_items, unseen_items, scenario_item
+
+def find_scenario_for_position(scenarios_position, position):
+    for scenario, positions in scenarios_position.items():
+        if position in positions:
+            return scenario
+    return None
 
 def select_next_adaptive_item_KI(responses_test, 
                                  seen_items, 
@@ -339,13 +351,13 @@ def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scena
         item_weights_dic[it], seen_items_dic[it], unseen_items_dic[it] = item_weights, seen_items, unseen_items
 
     if sampling_name == 'adaptive':
+        balance = True
         seen_items, unseen_items, mats = inital_items
         for n_model, responses in enumerate(responses_test):
             item_weights_dic[n_model], seen_items_dic[n_model], unseen_items_dic[n_model] = run_adaptive_selection(responses, seen_items, unseen_items, 
                                                                                                                     chosen_scenarios, 
                                                                                                                     scenarios_position, A, B, 
-                                                                                                                    mats, number_item, 
-                                                                                                                    balance=False, ki=False)
+                                                                                                                    mats, number_item, balance=balance, ki=False)
 
     return item_weights_dic, seen_items_dic, unseen_items_dic
 

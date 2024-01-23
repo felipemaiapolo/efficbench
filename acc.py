@@ -42,7 +42,7 @@ def compute_acc_pirt(scenario, scores_test, scenarios_position, seen_items, unse
     return lambd * data_part + (1 - lambd) * irt_part
 
 def calculate_accuracies(j, sampling_names, item_weights_dic, seen_items_dic, unseen_items_dic, A, B, scores_test, responses_test, scenarios_position, chosen_scenarios, balance_weights, opt_lambds, rows_to_hide):
-    
+
     number_items = list(item_weights_dic[sampling_names[0]].keys())
     iterations = len(list(item_weights_dic[sampling_names[0]][number_items[0]].keys()))
     
@@ -59,19 +59,16 @@ def calculate_accuracies(j, sampling_names, item_weights_dic, seen_items_dic, un
     # Populating output 
     for sampling_name in sampling_names:
         for number_item in number_items:
-            for it in range(iterations):
-                #print(sampling_name, number_item, it)
-                # Getting sample
-                item_weights, seen_items, unseen_items = item_weights_dic[sampling_name][number_item][it], seen_items_dic[sampling_name][number_item][it], unseen_items_dic[sampling_name][number_item][it]
+            if sampling_name == 'adaptive':
+                # Getting sample for specific model j
+                item_weights, seen_items, unseen_items = item_weights_dic[sampling_name][number_item][j], seen_items_dic[sampling_name][number_item][j], unseen_items_dic[sampling_name][number_item][j]
 
                 # Estimate ability parameters for the test set (IRT)
                 new_theta = estimate_ability_parameters(responses_test[j], seen_items, A, B)
 
                 # Update accuracies 
                 for scenario in chosen_scenarios:
-                    if sampling_name == 'random' and scenario=='mmlu': naive = (item_weights[scenario]*responses_test[j][[s for s in seen_items if s in scenarios_position[scenario]]]).sum()
-                    #elif sampling_name == 'random' and scenario=='civil_comments': 
-                    else: naive = (item_weights[scenario]*scores_test[j][[s for s in seen_items if s in scenarios_position[scenario]]]).sum()
+                    naive = (item_weights[scenario]*scores_test[j][[s for s in seen_items if s in scenarios_position[scenario]]]).sum()
                     pirt = compute_acc_pirt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, thresh=None)
                     cirt = compute_acc_pirt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, thresh=0.5)
                     lambd = opt_lambds[sampling_name+'_gpirt'][scenario][number_item]
@@ -80,6 +77,28 @@ def calculate_accuracies(j, sampling_names, item_weights_dic, seen_items_dic, un
                     accs[rows_to_hide[j]][number_item][sampling_name+'_pirt'][scenario].append(pirt)
                     accs[rows_to_hide[j]][number_item][sampling_name+'_cirt'][scenario].append(cirt)
                     accs[rows_to_hide[j]][number_item][sampling_name+'_gpirt'][scenario].append(lambd*naive + (1-lambd)*pirt)
+            else:
+                for it in range(iterations):
+                    #print(sampling_name, number_item, it)
+                    # Getting sample
+                    item_weights, seen_items, unseen_items = item_weights_dic[sampling_name][number_item][it], seen_items_dic[sampling_name][number_item][it], unseen_items_dic[sampling_name][number_item][it]
+
+                    # Estimate ability parameters for the test set (IRT)
+                    new_theta = estimate_ability_parameters(responses_test[j], seen_items, A, B)
+
+                    # Update accuracies 
+                    for scenario in chosen_scenarios:
+                        if sampling_name == 'random' and scenario=='mmlu': naive = (item_weights[scenario]*responses_test[j][[s for s in seen_items if s in scenarios_position[scenario]]]).sum()
+                        #elif sampling_name == 'random' and scenario=='civil_comments': 
+                        else: naive = (item_weights[scenario]*scores_test[j][[s for s in seen_items if s in scenarios_position[scenario]]]).sum()
+                        pirt = compute_acc_pirt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, thresh=None)
+                        cirt = compute_acc_pirt(scenario, scores_test[j], scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, thresh=0.5)
+                        lambd = opt_lambds[sampling_name+'_gpirt'][scenario][number_item]
+
+                        accs[rows_to_hide[j]][number_item][sampling_name+'_naive'][scenario].append(naive)
+                        accs[rows_to_hide[j]][number_item][sampling_name+'_pirt'][scenario].append(pirt)
+                        accs[rows_to_hide[j]][number_item][sampling_name+'_cirt'][scenario].append(cirt)
+                        accs[rows_to_hide[j]][number_item][sampling_name+'_gpirt'][scenario].append(lambd*naive + (1-lambd)*pirt)
     
     # Return output
     return accs
