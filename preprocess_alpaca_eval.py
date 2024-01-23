@@ -13,7 +13,7 @@ SHIFT_VALUE = 1 # 0 for no shifting, 1 for shifting into [0,1]
 
 version = 'alpaca_v2' if ALPACA_EVAL_VERSION == '2.0' else 'alpaca_v1'
 directories = glob(os.path.join(RAW_DATA_PATH,  "*"))
-models = [path.split(os.sep)[-1] for path in directories]
+models = [path.split(os.sep)[-1] for path in directories if os.path.isdir(path)]
 
 all_data = []
 exceptions = {}
@@ -58,8 +58,8 @@ for i, _ in enumerate(all_data):
     data_final[version]["correctness"].append(model_correctness)
     data_final[version]["missing_data"].append(missing_data)
 
-data_final[version]["correctness"] = np.array(data_final[version]["correctness"])
-data_final[version]["missing_data"] = np.array(data_final[version]["missing_data"])
+data_final[version]["correctness"] = np.array(data_final[version]["correctness"]).T
+data_final[version]["missing_data"] = np.array(data_final[version]["missing_data"]).T
 
 alpaca_eval_results = {"data": data_final,
                        "models": models,
