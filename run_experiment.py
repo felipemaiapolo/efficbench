@@ -29,9 +29,9 @@ assert split in ['iid','noniid']
 assert iterations>0
 
 # Defining other parameters
-Ds = [5, 10, 15, 20, 25, 30]
+Ds = [5, 10, 15, 20]
 sampling_names = ['random', 'anchor', 'anchor-irt']
-scenario_name = 'full' #we are evaluating all scenarios at once
+scenario_name = 'full' #we are evaluating all scenarios at once (this is just a nomination)
 
 # ## Data
 
@@ -49,8 +49,10 @@ if bench in ['lb','mmlu']:
     #split
     if split == 'iid':
         set_of_rows = [list(range(0,len(data['models']),4))]
+        print(len(set_of_rows[0]))
     else:
         set_of_rows = [list(range(int(len(data['models'])/4)))]
+        print(len(set_of_rows[0]))
 
 elif bench == 'helm':
     #data
@@ -76,9 +78,9 @@ elif bench == 'helm':
     
 elif bench == 'alpaca':
     #data
-    with open('data/alpaca_v2.pickle', 'rb') as handle:
+    with open('data/alpaca_v2_processed.pickle', 'rb') as handle:
         data = pickle.load(handle)
-        
+ 
     #scenarios
     scenarios = alpaca_scenarios
     
@@ -86,7 +88,7 @@ elif bench == 'alpaca':
     if split == 'iid':
         set_of_rows = [list(range(0,len(data['models']),4))]
     else:
-        raise NotImplementedError
+        set_of_rows = [list(range(int(len(data['models'])/4)))]
 
 else:
     raise NotImplementedError
