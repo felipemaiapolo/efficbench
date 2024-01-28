@@ -1,4 +1,5 @@
 from tqdm import tqdm
+import pickle
 import multiprocessing as mp
 import time
 from irt import *
@@ -28,10 +29,10 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
     - A dictionary containing the updated results.
     """
     
-    assert bench in ['irt_helm', 'irt_lb', 'irt_lb_perf', 'irt_mmlu', 'irt_alpaca']
+    assert bench in ['irt_helm', 'irt_lb', 'irt_lb_perf', 'irt_mmlu', 'irt_alpaca', 'irt_mmlu_fields']
     assert np.mean([s in ['random', 'anchor', 'anchor-irt', 'adaptive'] for s in sampling_names]) == 1
     
-    number_items = [10, 25, 50, 75, 100, 150]  # Number of items to consider in evaluations
+    number_items = [25, 50, 75, 100]  # Number of items to consider in evaluations
 
     cpu = mp.cpu_count()  # Number of available CPU cores
     epochs = 2000  # Number of epochs for IRT model training (package default is 2000)
@@ -49,11 +50,12 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         scenarios_position, subscenarios_position = prepare_data(chosen_scenarios, scenarios, data)
         scores = create_responses(chosen_scenarios, scenarios, data)
         
-        balance_weights = np.ones(scores.shape[1]) #for scenario=='civil_comments', some items need to be downweighted, for other scenarios not
+        balance_weights = np.ones(scores.shape[1]) #for scenario in ['civil_comments', 'mmlu'], some items need to be downweighted, for other scenarios not
         if 'civil_comments' in chosen_scenarios:
             balance_weights[scenarios_position['civil_comments']] = scores[:,scenarios_position['civil_comments']].max(axis=0)
-            #(balance_weights==0).sum(axis=0) verifying that no item had weight 0 (the output should be zero)
             scores[:,scenarios_position['civil_comments']] = (scores[:,scenarios_position['civil_comments']]>0).astype(float)
+            assert (balance_weights[scenarios_position['civil_comments']]==0).sum()==0 #verifying that no item had weight 0 (the output should be zero). Otherwise we would not be able to recover the weights in this way
+            assert abs(balance_weights[scenarios_position['civil_comments']].mean()-1)<1e-3 #verifying if the weights respect density ratio property
         if 'mmlu' in chosen_scenarios:
             N = len(scenarios_position['mmlu'])
             n_sub = len(scenarios['mmlu'])
@@ -76,18 +78,12 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
             # Apply the threshold to train and test responses
             responses_train[:,ind] = (scores_train[:,ind]>c).astype(int)
             responses_test[:,ind] = (scores_test[:,ind]>c).astype(int)
-
-        # Transforming scores back
-        scores = balance_weights*scores
-        scores_train = scores[[i for i in range(scores.shape[0]) if i not in rows_to_hide]]
-        scores_test = scores[[i for i in range(scores.shape[0]) if i in rows_to_hide]]
-        #print("shape of scores=",scores.shape, "shape of scores train=",scores_train.shape,"shape of scores test=",scores_test.shape)
         
         # Storing true accs to use later
         for j in range(len(rows_to_hide)):
             accs_true[rows_to_hide[j]] = {}
             for scenario in chosen_scenarios:
-                accs_true[rows_to_hide[j]][scenario] = scores_test[j, scenarios_position[scenario]].mean()
+                accs_true[rows_to_hide[j]][scenario] = ((balance_weights[None,:]*scores_test)[j, scenarios_position[scenario]]).mean()
         
         # Choosing D through validation
         val_ind = list(range(0,responses_train.shape[0],5)) #list(range(int(responses_train.shape[0]/3)))
@@ -103,14 +99,13 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         for D in tqdm(Ds):
             # Train IRT model for the current dimension (D)
             model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val/'
-            train_irt_model(dataset_name, model_name, D, lr, epochs, device)
+            #train_irt_model(dataset_name, model_name, D, lr, epochs, device)
             # Load trained IRT model parameters
             A, B, Theta = load_irt_parameters(model_name)
             # Determine seen and unseen items for validation
             seen_items = list(range(0, responses_train.shape[1], 2))
             unseen_items = list(range(1, responses_train.shape[1], 2))
             # Estimate ability parameters for the validation set
-            #thetas = [estimate_ability_parameters(responses_train[val_ind][j], seen_items, A, B) for j in tqdm(range(len(val_ind)))]
             print(" - fit. theta in the val set")
             pool = mp.Pool(cpu)
             thetas = pool.starmap(estimate_ability_parameters, [(responses_train[val_ind][j], seen_items, A, B) for j in range(len(val_ind))])
@@ -156,7 +151,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
 
         create_irt_dataset(responses_train, dataset_name)
         model_name = f'models/{bench}/row-{rows_to_hide_str}_D-validate_scenario-{scenario_name}/'
-        train_irt_model(dataset_name, model_name, D, lr, epochs, device)
+        #train_irt_model(dataset_name, model_name, D, lr, epochs, device)
 
         # Load the final IRT model
         A, B, Theta = load_irt_parameters(model_name)
@@ -167,20 +162,31 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
             inital_items = select_initial_adaptive_items(A, B, Theta, 2*D) if sampling_name == 'adaptive' else None
             item_weights_dic[sampling_name], seen_items_dic[sampling_name], unseen_items_dic[sampling_name] = {}, {}, {}
             pool = mp.Pool(cpu)
-            samples = pool.starmap(sample_items, [(number_item, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, responses_test, scores_train, scenarios_position, A, B, inital_items) for number_item in number_items])
-            #samples = [sample_items(number_items[0], iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, responses_test, scores_train, scenarios_position, A, B, inital_items)]
+            samples = pool.starmap(sample_items, [(number_item, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, responses_test, scores_train, scenarios_position, A, B, balance_weights, inital_items) for number_item in number_items])
             pool.close()
             pool.join()
 
             for i,number_item in enumerate(number_items):
                 item_weights_dic[sampling_name][number_item], seen_items_dic[sampling_name][number_item], unseen_items_dic[sampling_name][number_item] = samples[i]
-                
+              
+        #saving points
+        if bench=='irt_mmlu' and abs(rows_to_hide[1]-rows_to_hide[0])==1: #the last condition means 'split noniid'
+            dic = {}
+            dic['item_weights'] = item_weights_dic
+            dic['seen_items'] = seen_items_dic
+            dic['unseen_items'] = unseen_items_dic
+            dic['A'] = A
+            dic['B'] = B
+            with open('results/samples_mmlu.pickle', 'wb') as handle:
+                pickle.dump(dic, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            
+
         print("\nv) computing accuracies")
         start_time = time.time()
         pool = mp.Pool(cpu)
         out += pool.starmap(calculate_accuracies, [(j, sampling_names, item_weights_dic, seen_items_dic, unseen_items_dic, 
                                                     A, B, scores_test, responses_test, scenarios_position, chosen_scenarios, 
-                                                    balance_weights, opt_lambds, rows_to_hide) for j in range(len(rows_to_hide))]) 
+                                                    balance_weights, opt_lambds, rows_to_hide) for j in tqdm(range(len(rows_to_hide)))]) 
         pool.close()
         pool.join()
         elapsed_time = np.round(time.time()-start_time)
