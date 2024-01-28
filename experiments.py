@@ -163,8 +163,8 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
 
         print("\niv) sampling")
         item_weights_dic, seen_items_dic, unseen_items_dic = {}, {}, {}
-        for sampling_name in tqdm(sampling_names):
-            inital_items = select_initial_adaptive_items(A, B, Theta, 2*D) if sampling_name == 'adaptive' else None
+        for sampling_name in tqdm(sampling_names): 
+            inital_items = select_initial_adaptive_items(A, B, Theta, D+1, try_size=10000) if 'adaptive' in sampling_name else None
             item_weights_dic[sampling_name], seen_items_dic[sampling_name], unseen_items_dic[sampling_name] = {}, {}, {}
             pool = mp.Pool(cpu)
             samples = pool.starmap(sample_items, [(number_item, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, responses_test, scores_train, scenarios_position, A, B, inital_items) for number_item in number_items])
@@ -181,6 +181,12 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         out += pool.starmap(calculate_accuracies, [(j, sampling_names, item_weights_dic, seen_items_dic, unseen_items_dic, 
                                                     A, B, scores_test, responses_test, scenarios_position, chosen_scenarios, 
                                                     balance_weights, opt_lambds, rows_to_hide) for j in range(len(rows_to_hide))]) 
+        """
+        for j in range(len(rows_to_hide)):
+            out += [calculate_accuracies(j, sampling_names, item_weights_dic, seen_items_dic, unseen_items_dic, 
+                                                    A, B, scores_test, responses_test, scenarios_position, chosen_scenarios, 
+                                                    balance_weights, opt_lambds, rows_to_hide)]
+        """
         pool.close()
         pool.join()
         elapsed_time = np.round(time.time()-start_time)

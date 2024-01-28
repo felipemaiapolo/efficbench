@@ -29,8 +29,8 @@ assert split in ['iid','noniid']
 assert iterations>0
 
 # Defining other parameters
-Ds = [5, 10, 15, 20]
-sampling_names = ['random', 'anchor', 'anchor-irt']
+Ds = [1, 5, 10, 15, 20] #[10, 15,] # #, 
+sampling_names = ['random', 'anchor', 'anchor-irt', 'adaptive', ] #  ]
 scenario_name = 'full' #we are evaluating all scenarios at once (this is just a nomination)
 
 # ## Data

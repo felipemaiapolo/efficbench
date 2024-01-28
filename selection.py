@@ -72,16 +72,22 @@ def select_initial_adaptive_items(A, B, Theta, number_item, try_size=2000, seed=
     samples = [random.sample(range(A.shape[-1]), number_item) for _ in range(try_size)]
     samples_infos = np.stack([np.linalg.det(np.array([(p * (1 - p))[:, None, None] * mats[s] for p in item_curve(Theta, A[:, :, s], B[:, :, s])]).sum(axis=1)).sum() for s in samples])
     seen_items = samples[np.argmax(samples_infos)]
-    unseen_items = [i for i in range(A.shape[-1]) if i not in seen_items]
-    return seen_items, unseen_items, mats
+    #unseen_items = [i for i in range(A.shape[-1]) if i not in seen_items]
+    all_items = [i for i in range(A.shape[-1])] # if i not in seen_items]
+    return seen_items, all_items, mats
 
 
-def run_adaptive_selection(responses_test, seen_items, unseen_items, scenarios_choosen, scenarios_position, A, B, mats, num_items, balance=True, ki=False):
+def run_adaptive_selection(responses_test, seen_items, all_items, scenarios_choosen, scenarios_position, A, B, mats, num_items, balance=True, ki=False):
+    target_count = num_items*len(scenarios_choosen)   
     
-    target_count = num_items*len(scenarios_choosen)    
-    assert len(seen_items) <= target_count
+    if (target_count / 3) < len(seen_items):
+        seen_items = seen_items[:int(target_count / 3)]
+
+    unseen_items = [i for i in all_items if i not in seen_items]
+
+    #assert len(seen_items) <= target_count
     count = len(seen_items)
-    
+        
     scenario_counts = {scenario: 0 for scenario in scenarios_choosen}
     for item in seen_items:
         scenario_item = find_scenario_for_position(scenarios_position, item)
@@ -345,16 +351,16 @@ def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scena
 
         elif sampling_name == 'anchor-irt':
             _, item_weights, seen_items, unseen_items = get_anchor(np.vstack((A.squeeze(), B.reshape((1,-1)))), chosen_scenarios, scenarios_position, number_item, random_seed=it)
-        elif sampling_name == 'adaptive':
+        elif 'adaptive' in sampling_name:
             continue
 
         item_weights_dic[it], seen_items_dic[it], unseen_items_dic[it] = item_weights, seen_items, unseen_items
 
-    if sampling_name == 'adaptive':
+    if 'adaptive' in sampling_name:
         balance = True
-        seen_items, unseen_items, mats = inital_items
+        seen_items, all_items, mats = inital_items
         for n_model, responses in enumerate(responses_test):
-            item_weights_dic[n_model], seen_items_dic[n_model], unseen_items_dic[n_model] = run_adaptive_selection(responses, seen_items, unseen_items, 
+            item_weights_dic[n_model], seen_items_dic[n_model], unseen_items_dic[n_model] = run_adaptive_selection(responses, seen_items, all_items, 
                                                                                                                     chosen_scenarios, 
                                                                                                                     scenarios_position, A, B, 
                                                                                                                     mats, number_item, balance=balance, ki=False)
