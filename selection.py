@@ -1,13 +1,14 @@
 import numpy as np
 import random
-from sklearn_extra.cluster import KMedoids
+from sklearn.cluster import KMeans
+from sklearn.metrics.pairwise import pairwise_distances
 from scipy.integrate import nquad, quad
 from scipy.stats import norm
 from tqdm import tqdm
 from irt import *
 from utils import *
 
-def get_random(scenarios_choosen, scenarios, number_item, subscenarios_position, responses_test, random_seed):
+def get_random(scenarios_choosen, scenarios, number_item, subscenarios_position, responses_test, balance_weights, random_seed):
     
     """
     Stratified sample items (seen_items). 'unseen_intems' gives the complement.
@@ -45,8 +46,8 @@ def get_random(scenarios_choosen, scenarios, number_item, subscenarios_position,
     
     # Iterate through each chosen scenario to determine the seen items.
     for scenario in scenarios_choosen:
-        
-        item_weights[scenario] = np.ones(number_item)/number_item
+
+        seen_items_scenario = []
         
         # Allocate the number of items to be seen in each subscenario.
         number_items_sub = np.zeros(len(scenarios[scenario])).astype(int)
@@ -57,9 +58,18 @@ def get_random(scenarios_choosen, scenarios, number_item, subscenarios_position,
         # Shuffle the subscenarios and iterate through them to select seen items.
         for sub in shuffle_list(scenarios[scenario]):
             # Randomly select items from the subscenario and add them to the seen items.
-            seen_items += random.sample(subscenarios_position[scenario][sub], k=number_items_sub[i])
+            seen_items_scenario += random.sample(subscenarios_position[scenario][sub], k=number_items_sub[i])
             i += 1
 
+        if scenario == 'civil_comments': #cc it needs weighting (toxic/non-toxic needs to have the same weight)
+            norm_balance_weights = balance_weights[seen_items_scenario]
+            norm_balance_weights /= norm_balance_weights.sum()
+            item_weights[scenario] =  norm_balance_weights
+        else:
+            item_weights[scenario] = np.ones(number_item)/number_item
+            
+        seen_items += seen_items_scenario
+        
     # Determine the unseen items by finding all item indices that are not in the seen items list.
     unseen_items = [i for i in range(responses_test.shape[1]) if i not in seen_items]
 
@@ -284,7 +294,7 @@ def get_weights(IRT_params: np.array,
     # Normalize the frequencies to get weights
     return frequency / np.sum(frequency)
 
-def get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, random_seed):
+def get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, balance_weights, random_seed):
     """
     Calculates anchor points, anchor weights, seen and unseen items.
 
@@ -302,7 +312,7 @@ def get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, 
     for scenario in chosen_scenarios:
         anchor_points[scenario] = {}
         anchor_weights[scenario] = {}
-        anchor_points[scenario], anchor_weights[scenario] = get_anchor_points_weights(scores_train, scenarios_position, scenario, number_item, random_seed)
+        anchor_points[scenario], anchor_weights[scenario] = get_anchor_points_weights(scores_train, scenarios_position, scenario, number_item, balance_weights, random_seed)
     
     seen_items = [list(np.array(scenarios_position[scenario])[anchor_points[scenario]]) for scenario in chosen_scenarios]
     seen_items = list(np.array(seen_items).reshape(-1))
@@ -311,10 +321,10 @@ def get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, 
     return anchor_points, anchor_weights, seen_items, unseen_items
 
 
-def get_anchor_points_weights(scores_train, scenarios_position, scenario, number_item, random_seed, trials = 10):
+def get_anchor_points_weights(scores_train, scenarios_position, scenario, number_item, balance_weights, random_seed):
 
     """
-    Calculates anchor points and weights using KMedoids clustering.
+    Calculates anchor points and weights using KMeans clustering.
 
     Parameters:
     scores_train (array): The training scores.
@@ -325,33 +335,38 @@ def get_anchor_points_weights(scores_train, scenarios_position, scenario, number
     Returns:
     tuple: A tuple containing the anchor points and anchor weights.
     """
-    # Fitting the KMedoids model
-    kmedoids_models = [KMedoids(n_clusters=number_item, metric='euclidean', init='k-medoids++', random_state=1000*t+random_seed).fit(scores_train[:,scenarios_position[scenario]].T) for t in range(trials)] #method='pam', 
-
-    kmedoids = kmedoids_models[np.argmin([m.inertia_ for m in kmedoids_models])]
     
+    assert np.mean(balance_weights<0)==0
+    norm_balance_weights = balance_weights[scenarios_position[scenario]]
+    norm_balance_weights /= norm_balance_weights.sum()
+
+    # Fitting the KMeans model
+    X = scores_train[:,scenarios_position[scenario]].T
+    kmeans = KMeans(n_clusters=number_item, random_state=random_seed, n_init="auto").fit(X, sample_weight=norm_balance_weights)
+
     # Calculating anchor points
-    anchor_points = kmedoids.medoid_indices_
+    anchor_points = pairwise_distances(kmeans.cluster_centers_, X, metric='euclidean').argmin(axis=1)
     
     # Calculating anchor weights
-    anchor_weights = np.array([np.mean(kmedoids.labels_ == anchor) for anchor in range(number_item)])
-    anchor_weights /= anchor_weights.sum()
+    anchor_weights = np.array([np.sum(norm_balance_weights[kmeans.labels_==c]) for c in range(number_item)])
+    assert abs(anchor_weights.sum()-1)<1e-5
     
     return anchor_points, anchor_weights
 
-def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, responses_test, scores_train, scenarios_position, A, B, inital_items=None):
+def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, responses_test, scores_train, scenarios_position, A, B, balance_weights, inital_items=None):
     item_weights_dic, seen_items_dic, unseen_items_dic = {}, {}, {}
 
     for it in range(iterations):
         if sampling_name == 'random':
-            item_weights, seen_items, unseen_items = get_random(chosen_scenarios, scenarios, number_item, subscenarios_position, responses_test, random_seed=it)
+            item_weights, seen_items, unseen_items = get_random(chosen_scenarios, scenarios, number_item, subscenarios_position, responses_test, balance_weights, random_seed=it)
 
         elif sampling_name == 'anchor':
-            _, item_weights, seen_items, unseen_items = get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, random_seed=it)
+            _, item_weights, seen_items, unseen_items = get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, balance_weights, random_seed=it)
 
         elif sampling_name == 'anchor-irt':
             _, item_weights, seen_items, unseen_items = get_anchor(np.vstack((A.squeeze(), B.reshape((1,-1)))), chosen_scenarios, scenarios_position, number_item, random_seed=it)
         elif 'adaptive' in sampling_name:
+            _, item_weights, seen_items, unseen_items = get_anchor(np.vstack((A.squeeze(), B.reshape((1,-1)))), chosen_scenarios, scenarios_position, number_item, balance_weights, random_seed=it)
             continue
 
         item_weights_dic[it], seen_items_dic[it], unseen_items_dic[it] = item_weights, seen_items, unseen_items

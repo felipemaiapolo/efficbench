@@ -6,7 +6,7 @@ from scipy import stats
 from experiments import *
 from utils import *
 
-#python run_experiment.py --bench 'lb' --split 'iid' --iterations 3 --device 'cuda'
+#python run_experiment.py --bench 'lb' --split 'iid' --iterations 10 --device 'cuda'
 
 # ## Definitions
 
@@ -24,13 +24,13 @@ split = args.split
 iterations = args.iterations
 device = args.device
 
-assert bench in ['helm','lb','mmlu','alpaca']
+assert bench in ['helm','lb','mmlu','alpaca','mmlu_fields']
 assert split in ['iid','noniid']
 assert iterations>0
 
 # Defining other parameters
-Ds = [1, 5, 10, 15, 20] #[10, 15,] # #, 
-sampling_names = ['random', 'anchor', 'anchor-irt', 'adaptive', ] #  ]
+Ds = [2, 5, 10, 15, 20]
+sampling_names = ['random', 'anchor', 'anchor-irt', 'adaptive', ] 
 scenario_name = 'full' #we are evaluating all scenarios at once (this is just a nomination)
 
 # ## Data
@@ -90,6 +90,26 @@ elif bench == 'alpaca':
     else:
         set_of_rows = [list(range(int(len(data['models'])/4)))]
 
+# Loading data
+elif bench == 'mmlu_fields':
+    
+    #data
+    with open('data/mmlu_fields.pickle', 'rb') as handle:
+        data = pickle.load(handle)
+    
+    #scenarios
+    scenarios = lb_scenarios
+    scenarios = {'mmlu':scenarios['mmlu']}
+    
+    #split
+    if split == 'iid':
+        k = int(len(data['models'])/40)
+        set_of_rows = [list(range(0,len(data['models']),k))]
+        print(set_of_rows)
+    else:
+        set_of_rows = [list(range(40))]
+
+    
 else:
     raise NotImplementedError
 chosen_scenarios = list(scenarios.keys())
@@ -98,9 +118,9 @@ chosen_scenarios = list(scenarios.keys())
 # ## Results
 results_full, accs_full = evaluate_scenarios(data, scenario_name, chosen_scenarios, scenarios, set_of_rows, Ds, iterations, device, bench='irt_'+bench, sampling_names = sampling_names)
 
-with open(f'results/results_{bench}_split-{split}.pickle', 'wb') as handle:
+with open(f'results/results_{bench}_split-{split}_iterations-{iterations}.pickle', 'wb') as handle:
     pickle.dump(results_full, handle, protocol=pickle.HIGHEST_PROTOCOL)
     
-with open(f'results/accs_{bench}_split-{split}.pickle', 'wb') as handle:
+with open(f'results/accs_{bench}_split-{split}_iterations-{iterations}.pickle', 'wb') as handle:
     pickle.dump(accs_full, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
