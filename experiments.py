@@ -100,7 +100,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         for D in tqdm(Ds):
             # Train IRT model for the current dimension (D)
             model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val/'
-            train_irt_model(dataset_name, model_name, D, lr, epochs, device)
+            #train_irt_model(dataset_name, model_name, D, lr, epochs, device)
             # Load trained IRT model parameters
             A, B, Theta = load_irt_parameters(model_name)
             # Determine seen and unseen items for validation
@@ -167,19 +167,19 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
                 sampling_time_dic[sampling_name] = {number_item: [] for number_item in number_items}
 
                 inital_items = select_initial_adaptive_items(A, B, Theta, D+1, try_size=10000)
-
+                '''
                 samples = [sample_items_adaptive(number_items, iterations, sampling_name, chosen_scenarios, scenarios, 
                                                                 subscenarios_position, responses_test[0], scores_train, scenarios_position, 
                                                                 A, B, balance_weights, inital_items)]
-
+                '''
                 pool = mp.Pool(cpu)
                 # parallelising models
                 samples = pool.starmap(sample_items_adaptive, [(number_items, iterations, sampling_name, chosen_scenarios, scenarios, 
                                                                 subscenarios_position, responses, scores_train, scenarios_position, 
-                                                                A, B, balance_weights, inital_items) for n_model, responses in enumerate(responses_test)])
+                                                                A, B, balance_weights, inital_items) for responses in responses_test])
                 pool.close()
                 pool.join() 
-                for n_model, samples_model in enumerate(samples):
+                for n_model, samples_model in enumerate(samples): #zip(rows_to_hide, samples):
                     item_weights_model, seen_items_model, unseen_items_model, sampling_time = samples_model
                     sampling_time = np.array(sampling_time).mean()
                     for number_item in number_items:
@@ -213,6 +213,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
 
         print("\nv) computing accuracies")
         start_time = time.time()
+
         pool = mp.Pool(cpu)
         out += pool.starmap(calculate_accuracies, [(j, sampling_names, item_weights_dic, seen_items_dic, unseen_items_dic, 
                                                     A, B, scores_test, responses_test, scenarios_position, chosen_scenarios, 
@@ -223,7 +224,6 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         print(f" - finished in {elapsed_time} seconds")
         
     ### Final results
-    
     accs_hat = {}
     results = {}
     for item in out:
