@@ -3,6 +3,7 @@ from scipy.optimize import minimize
 import jsonlines
 import os
 import json
+import time
 from utils import *
      
 def create_irt_dataset(responses, dataset_name): 
@@ -106,6 +107,11 @@ def estimate_ability_parameters(responses_test, seen_items, A, B, theta_init=Non
         theta_init = np.zeros(D)
 
     # Use the minimize function to find the ability parameters that minimize the negative log likelihood
+    start_time = time.time()
     optimal_theta = minimize(neg_log_like, theta_init, method = optimizer).x[None,:,None] 
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    with open("results/estimate_ability_parameters_timing.txt", "a") as file:
+        file.write(f"{D} {len(seen_items)} {elapsed_time}\n")
     
     return optimal_theta

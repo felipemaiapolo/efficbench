@@ -5,6 +5,7 @@ from sklearn.metrics.pairwise import pairwise_distances
 from scipy.integrate import nquad, quad
 from scipy.stats import norm
 from tqdm import tqdm
+import time
 from irt import *
 from utils import *
 
@@ -82,22 +83,16 @@ def select_initial_adaptive_items(A, B, Theta, number_item, try_size=2000, seed=
     samples = [random.sample(range(A.shape[-1]), number_item) for _ in range(try_size)]
     samples_infos = np.stack([np.linalg.det(np.array([(p * (1 - p))[:, None, None] * mats[s] for p in item_curve(Theta, A[:, :, s], B[:, :, s])]).sum(axis=1)).sum() for s in samples])
     seen_items = samples[np.argmax(samples_infos)]
-    #unseen_items = [i for i in range(A.shape[-1]) if i not in seen_items]
-    all_items = [i for i in range(A.shape[-1])] # if i not in seen_items]
-    return seen_items, all_items, mats
+    unseen_items = [i for i in range(A.shape[-1]) if i not in seen_items]
+    return seen_items, unseen_items, mats
 
 
-def run_adaptive_selection(responses_test, seen_items, all_items, scenarios_choosen, scenarios_position, A, B, mats, num_items, balance=True, ki=False):
-    target_count = num_items*len(scenarios_choosen)   
+def run_adaptive_selection(responses_test, seen_items, unseen_items, scenarios_choosen, scenarios_position, A, B, mats, num_items, balance=True, ki=False):
     
-    if (target_count / 3) < len(seen_items):
-        seen_items = seen_items[:int(target_count / 3)]
-
-    unseen_items = [i for i in all_items if i not in seen_items]
-
-    #assert len(seen_items) <= target_count
+    target_count = num_items*len(scenarios_choosen)    
+    assert len(seen_items) <= target_count
     count = len(seen_items)
-        
+    
     scenario_counts = {scenario: 0 for scenario in scenarios_choosen}
     for item in seen_items:
         scenario_item = find_scenario_for_position(scenarios_position, item)
@@ -335,6 +330,7 @@ def get_anchor_points_weights(scores_train, scenarios_position, scenario, number
     Returns:
     tuple: A tuple containing the anchor points and anchor weights.
     """
+    trials = 5
     
     assert np.mean(balance_weights<0)==0
     norm_balance_weights = balance_weights[scenarios_position[scenario]]
@@ -342,8 +338,9 @@ def get_anchor_points_weights(scores_train, scenarios_position, scenario, number
 
     # Fitting the KMeans model
     X = scores_train[:,scenarios_position[scenario]].T
-    kmeans = KMeans(n_clusters=number_item, random_state=random_seed, n_init="auto").fit(X, sample_weight=norm_balance_weights)
-
+    kmeans_models = [KMeans(n_clusters=number_item, random_state=1000*t+random_seed, n_init="auto").fit(X, sample_weight=norm_balance_weights) for t in range(trials)]
+    kmeans = kmeans_models[np.argmin([m.inertia_ for m in kmeans_models])]
+    
     # Calculating anchor points
     anchor_points = pairwise_distances(kmeans.cluster_centers_, X, metric='euclidean').argmin(axis=1)
     
@@ -356,29 +353,37 @@ def get_anchor_points_weights(scores_train, scenarios_position, scenario, number
 def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, responses_test, scores_train, scenarios_position, A, B, balance_weights, inital_items=None):
     item_weights_dic, seen_items_dic, unseen_items_dic = {}, {}, {}
 
-    for it in range(iterations):
-        if sampling_name == 'random':
-            item_weights, seen_items, unseen_items = get_random(chosen_scenarios, scenarios, number_item, subscenarios_position, responses_test, balance_weights, random_seed=it)
-
-        elif sampling_name == 'anchor':
-            _, item_weights, seen_items, unseen_items = get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, balance_weights, random_seed=it)
-
-        elif sampling_name == 'anchor-irt':
-            _, item_weights, seen_items, unseen_items = get_anchor(np.vstack((A.squeeze(), B.reshape((1,-1)))), chosen_scenarios, scenarios_position, number_item, random_seed=it)
-        elif 'adaptive' in sampling_name:
-            _, item_weights, seen_items, unseen_items = get_anchor(np.vstack((A.squeeze(), B.reshape((1,-1)))), chosen_scenarios, scenarios_position, number_item, balance_weights, random_seed=it)
-            continue
-
-        item_weights_dic[it], seen_items_dic[it], unseen_items_dic[it] = item_weights, seen_items, unseen_items
-
-    if 'adaptive' in sampling_name:
+    start_time = time.time()
+    if sampling_name == 'adaptive':
         balance = True
-        seen_items, all_items, mats = inital_items
+        seen_items, unseen_items, mats = inital_items
         for n_model, responses in enumerate(responses_test):
-            item_weights_dic[n_model], seen_items_dic[n_model], unseen_items_dic[n_model] = run_adaptive_selection(responses, seen_items, all_items, 
+            item_weights_dic[n_model], seen_items_dic[n_model], unseen_items_dic[n_model] = run_adaptive_selection(responses, seen_items, unseen_items, 
                                                                                                                     chosen_scenarios, 
                                                                                                                     scenarios_position, A, B, 
                                                                                                                     mats, number_item, balance=balance, ki=False)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+    else:
+        for it in range(iterations):
+            if sampling_name == 'random':
+                item_weights, seen_items, unseen_items = get_random(chosen_scenarios, scenarios, number_item, subscenarios_position, responses_test, balance_weights, random_seed=it)
 
-    return item_weights_dic, seen_items_dic, unseen_items_dic
+            elif sampling_name == 'anchor':
+                _, item_weights, seen_items, unseen_items = get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, balance_weights, random_seed=it)
+
+            elif sampling_name == 'anchor-irt':
+                _, item_weights, seen_items, unseen_items = get_anchor(np.vstack((A.squeeze(), B.reshape((1,-1)))), chosen_scenarios, scenarios_position, number_item, balance_weights, random_seed=it)
+
+            else:
+                raise NotImplementedError
+            
+
+            item_weights_dic[it], seen_items_dic[it], unseen_items_dic[it] = item_weights, seen_items, unseen_items
+
+        end_time = time.time()
+        elapsed_time = (end_time - start_time)/iterations
+        
+
+    return item_weights_dic, seen_items_dic, unseen_items_dic, elapsed_time
 

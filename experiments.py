@@ -32,7 +32,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
     assert bench in ['irt_helm', 'irt_lb', 'irt_lb_perf', 'irt_mmlu', 'irt_alpaca', 'irt_mmlu_fields']
     assert np.mean([s in ['random', 'anchor', 'anchor-irt', 'adaptive'] for s in sampling_names]) == 1
     
-    number_items = [25, 50, 75, 100]  # Number of items to consider in evaluations
+    number_items = [10, 30, 60, 100]  # Number of items to consider in evaluations
 
     cpu = mp.cpu_count()  # Number of available CPU cores
     epochs = 2000  # Number of epochs for IRT model training (package default is 2000)
@@ -157,17 +157,18 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         A, B, Theta = load_irt_parameters(model_name)
 
         print("\niv) sampling")
-        item_weights_dic, seen_items_dic, unseen_items_dic = {}, {}, {}
+        item_weights_dic, seen_items_dic, unseen_items_dic, sampling_time_dic = {}, {}, {}, {}
         for sampling_name in tqdm(sampling_names): 
             inital_items = select_initial_adaptive_items(A, B, Theta, D+1, try_size=10000) if 'adaptive' in sampling_name else None
-            item_weights_dic[sampling_name], seen_items_dic[sampling_name], unseen_items_dic[sampling_name] = {}, {}, {}
+            item_weights_dic[sampling_name], seen_items_dic[sampling_name], unseen_items_dic[sampling_name], sampling_time_dic[sampling_name] = {}, {}, {}, {}
+            
             pool = mp.Pool(cpu)
             samples = pool.starmap(sample_items, [(number_item, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, responses_test, scores_train, scenarios_position, A, B, balance_weights, inital_items) for number_item in number_items])
             pool.close()
             pool.join()
 
             for i,number_item in enumerate(number_items):
-                item_weights_dic[sampling_name][number_item], seen_items_dic[sampling_name][number_item], unseen_items_dic[sampling_name][number_item] = samples[i]
+                item_weights_dic[sampling_name][number_item], seen_items_dic[sampling_name][number_item], unseen_items_dic[sampling_name][number_item], sampling_time_dic[sampling_name][number_item] = samples[i]
               
         #saving points
         if bench=='irt_mmlu' and abs(rows_to_hide[1]-rows_to_hide[0])==1: #the last condition means 'split noniid'
@@ -212,4 +213,4 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
                         for scenario in chosen_scenarios:
                             results[rows_to_hide[j]][number_item][sampling_name+'_'+estimators][scenario] = np.abs(np.array(accs_hat[rows_to_hide[j]][number_item][sampling_name+'_'+estimators][scenario]) - accs_true[rows_to_hide[j]][scenario])
 
-    return results, accs_hat # Return the updated results dictionary
+    return results, accs_hat, sampling_time_dic # Return the updated results dictionary
