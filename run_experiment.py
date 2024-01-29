@@ -29,8 +29,10 @@ assert split in ['iid','noniid']
 assert iterations>0
 
 # Defining other parameters
+
 Ds = [1] #[2, 5, 10, 15, 20]
 sampling_names = ['adaptive'] #['random'] #['random', 'anchor', 'anchor-irt', 'adaptive', ] 
+
 scenario_name = 'full' #we are evaluating all scenarios at once (this is just a nomination)
 
 # ## Data
@@ -49,10 +51,9 @@ if bench in ['lb','mmlu']:
     #split
     if split == 'iid':
         set_of_rows = [list(range(0,len(data['models']),4))]
-        print(len(set_of_rows[0]))
     else:
         set_of_rows = [list(range(int(len(data['models'])/4)))]
-        print(len(set_of_rows[0]))
+    print(len(set_of_rows[0]), len(data['models']))
 
 elif bench == 'helm':
     #data
@@ -75,10 +76,11 @@ elif bench == 'helm':
                        [4,12,13], #anthropic+microsoft
                        [14,15,16,17,18,19,20,21,22], #openai
                        [23,24,25,26,27]] #together
+    print(len(set_of_rows[0]), len(data['models']))
     
 elif bench == 'alpaca':
     #data
-    with open('data/alpaca_v2_processed.pickle', 'rb') as handle:
+    with open('data/alpaca_v2.pickle', 'rb') as handle:
         data = pickle.load(handle)
  
     #scenarios
@@ -89,7 +91,8 @@ elif bench == 'alpaca':
         set_of_rows = [list(range(0,len(data['models']),4))]
     else:
         set_of_rows = [list(range(int(len(data['models'])/4)))]
-
+    print(len(set_of_rows[0]), len(data['models']))
+          
 # Loading data
 elif bench == 'mmlu_fields':
     
@@ -105,10 +108,9 @@ elif bench == 'mmlu_fields':
     if split == 'iid':
         k = int(len(data['models'])/40)
         set_of_rows = [list(range(0,len(data['models']),k))]
-        print(set_of_rows)
     else:
         set_of_rows = [list(range(40))]
-
+    print(len(set_of_rows[0]), len(data['models']))
     
 else:
     raise NotImplementedError
@@ -116,7 +118,7 @@ chosen_scenarios = list(scenarios.keys())
 
 
 # ## Results
-results_full, accs_full = evaluate_scenarios(data, scenario_name, chosen_scenarios, scenarios, set_of_rows, Ds, iterations, device, bench='irt_'+bench, sampling_names = sampling_names)
+results_full, accs_full, sampling_time_dic = evaluate_scenarios(data, scenario_name, chosen_scenarios, scenarios, set_of_rows, Ds, iterations, device, bench='irt_'+bench, sampling_names = sampling_names)
 
 with open(f'results/results_{bench}_split-{split}_iterations-{iterations}.pickle', 'wb') as handle:
     pickle.dump(results_full, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -124,3 +126,5 @@ with open(f'results/results_{bench}_split-{split}_iterations-{iterations}.pickle
 with open(f'results/accs_{bench}_split-{split}_iterations-{iterations}.pickle', 'wb') as handle:
     pickle.dump(accs_full, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+with open(f'results/samplingtime_{bench}_split-{split}_iterations-{iterations}.pickle', 'wb') as handle:
+    pickle.dump(sampling_time_dic, handle, protocol=pickle.HIGHEST_PROTOCOL)

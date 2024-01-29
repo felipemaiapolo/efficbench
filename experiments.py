@@ -33,7 +33,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
     assert bench in ['irt_helm', 'irt_lb', 'irt_lb_perf', 'irt_mmlu', 'irt_alpaca', 'irt_mmlu_fields']
     assert np.mean([s in ['random', 'anchor', 'anchor-irt', 'adaptive'] for s in sampling_names]) == 1
     
-    number_items = [25, 50] #, 75, 100]  # Number of items to consider in evaluations
+    number_items = [10, 30, 60, 100]  # Number of items to consider in evaluations
 
     cpu = mp.cpu_count()  # Number of available CPU cores
     epochs = 10 #2000  # Number of epochs for IRT model training (package default is 2000)
@@ -238,4 +238,4 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
                         for scenario in chosen_scenarios:
                             results[rows_to_hide[j]][number_item][sampling_name+'_'+estimators][scenario] = np.abs(np.array(accs_hat[rows_to_hide[j]][number_item][sampling_name+'_'+estimators][scenario]) - accs_true[rows_to_hide[j]][scenario])
 
-    return results, accs_hat # Return the updated results dictionary
+    return results, accs_hat, sampling_time_dic # Return the updated results dictionary

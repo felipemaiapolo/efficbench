@@ -5,6 +5,7 @@ from sklearn.metrics.pairwise import pairwise_distances
 from scipy.integrate import nquad, quad
 from scipy.stats import norm
 from tqdm import tqdm
+import time
 from irt import *
 from utils import *
 
@@ -82,9 +83,8 @@ def select_initial_adaptive_items(A, B, Theta, number_item, try_size=2000, seed=
     samples = [random.sample(range(A.shape[-1]), number_item) for _ in range(try_size)]
     samples_infos = np.stack([np.linalg.det(np.array([(p * (1 - p))[:, None, None] * mats[s] for p in item_curve(Theta, A[:, :, s], B[:, :, s])]).sum(axis=1)).sum() for s in samples])
     seen_items = samples[np.argmax(samples_infos)]
-    #unseen_items = [i for i in range(A.shape[-1]) if i not in seen_items]
-    all_items = [i for i in range(A.shape[-1])] # if i not in seen_items]
-    return seen_items, all_items, mats
+    unseen_items = [i for i in range(A.shape[-1]) if i not in seen_items]
+    return seen_items, unseen_items, mats
 
 
 def run_adaptive_selection(responses_test, 
@@ -109,6 +109,7 @@ def run_adaptive_selection(responses_test,
     count = len(seen_items)
         
     scenario_occurrences = {scenario: 0 for scenario in scenarios_choosen}
+
     for item in seen_items:
         scenario_of_item = find_scenario_from_position(scenarios_position, item)
         scenario_occurrences[scenario_of_item] += 1
@@ -263,6 +264,7 @@ def get_anchor_points_weights(scores_train, scenarios_position, scenario, number
     Returns:
     tuple: A tuple containing the anchor points and anchor weights.
     """
+    trials = 5
     
     assert np.mean(balance_weights<0)==0
     norm_balance_weights = balance_weights[scenarios_position[scenario]]
@@ -270,8 +272,9 @@ def get_anchor_points_weights(scores_train, scenarios_position, scenario, number
 
     # Fitting the KMeans model
     X = scores_train[:,scenarios_position[scenario]].T
-    kmeans = KMeans(n_clusters=number_item, random_state=random_seed, n_init="auto").fit(X, sample_weight=norm_balance_weights)
-
+    kmeans_models = [KMeans(n_clusters=number_item, random_state=1000*t+random_seed, n_init="auto").fit(X, sample_weight=norm_balance_weights) for t in range(trials)]
+    kmeans = kmeans_models[np.argmin([m.inertia_ for m in kmeans_models])]
+    
     # Calculating anchor points
     anchor_points = pairwise_distances(kmeans.cluster_centers_, X, metric='euclidean').argmin(axis=1)
     
@@ -287,6 +290,7 @@ def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scena
     assert 'adaptive' not in sampling_name
 
     item_weights_dic, seen_items_dic, unseen_items_dic = {}, {}, {}
+    start_time = time.time()
 
     for it in range(iterations):
         if sampling_name == 'random':
@@ -300,21 +304,24 @@ def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scena
 
         item_weights_dic[it], seen_items_dic[it], unseen_items_dic[it] = item_weights, seen_items, unseen_items
 
+    end_time = time.time()
+    elapsed_time = end_time - start_time
 
-    return item_weights_dic, seen_items_dic, unseen_items_dic
+    return item_weights_dic, seen_items_dic, unseen_items_dic, elapsed_time
 
 def sample_items_adaptive(number_items, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, 
                  responses_model, scores_train, scenarios_position, A, B, balance_weights, n_model,
                  initial_items=None, balance=True,
                  ):
     assert 'adaptive' in sampling_name
-
-    #_, item_weights, seen_items, unseen_items = get_anchor(np.vstack((A.squeeze(), B.reshape((1,-1)))), chosen_scenarios, scenarios_position, number_item, balance_weights, random_seed=it)
     
     # list of different num_items results for one model
+    start_time = time.time()
     item_weights_model, seen_items_model, unseen_items_model = run_adaptive_selection(responses_model, initial_items, 
                                                                                       chosen_scenarios, 
                                                                                       scenarios_position, A, B, 
                                                                                       number_items, balance=balance)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
 
-    return item_weights_model, seen_items_model, unseen_items_model
+    return item_weights_model, seen_items_model, unseen_items_model, elapsed_time
