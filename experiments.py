@@ -167,11 +167,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
                 sampling_time_dic[sampling_name] = {number_item: [] for number_item in number_items}
 
                 inital_items = select_initial_adaptive_items(A, B, Theta, D+1, try_size=10000)
-                '''
-                samples = [sample_items_adaptive(number_items, iterations, sampling_name, chosen_scenarios, scenarios, 
-                                                                subscenarios_position, responses_test[0], scores_train, scenarios_position, 
-                                                                A, B, balance_weights, inital_items)]
-                '''
+  
                 pool = mp.Pool(cpu)
                 # parallelising models
                 samples = pool.starmap(sample_items_adaptive, [(number_items, iterations, sampling_name, chosen_scenarios, scenarios, 
