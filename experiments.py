@@ -33,10 +33,10 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
     assert bench in ['irt_helm', 'irt_lb', 'irt_lb_perf', 'irt_mmlu', 'irt_alpaca', 'irt_mmlu_fields']
     assert np.mean([s in ['random', 'anchor', 'anchor-irt', 'adaptive'] for s in sampling_names]) == 1
     
-    number_items = [10, 30, 60, 100]  # Number of items to consider in evaluations
+    number_items = [10, 20, 30, 60, 100]  # Number of items to consider in evaluations
 
     cpu = mp.cpu_count()  # Number of available CPU cores
-    epochs = 10 #2000  # Number of epochs for IRT model training (package default is 2000)
+    epochs = 2000  # Number of epochs for IRT model training (package default is 2000)
     lr = .1  # Learning rate for IRT model training (package default is .1)
 
     # Iterate through each set of rows to hide
@@ -158,32 +158,37 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         A, B, Theta = load_irt_parameters(model_name)
 
         print("\niv) sampling")
-        item_weights_dic, seen_items_dic, unseen_items_dic = {}, {}, {}
+        item_weights_dic, seen_items_dic, unseen_items_dic, sampling_time_dic = {}, {}, {}, {}
         for sampling_name in tqdm(sampling_names):  
             if 'adaptive' in sampling_name:
                 item_weights_dic[sampling_name] = {number_item: {n_model: [] for n_model in range(responses_test.shape[0])} for number_item in number_items}
                 seen_items_dic[sampling_name] = {number_item: {n_model: [] for n_model in range(responses_test.shape[0])} for number_item in number_items}
                 unseen_items_dic[sampling_name] = {number_item: {n_model: [] for n_model in range(responses_test.shape[0])} for number_item in number_items}
+                sampling_time_dic[sampling_name] = {number_item: [] for number_item in number_items}
 
                 inital_items = select_initial_adaptive_items(A, B, Theta, D+1, try_size=10000)
+
+                samples = [sample_items_adaptive(number_items, iterations, sampling_name, chosen_scenarios, scenarios, 
+                                                                subscenarios_position, responses_test[0], scores_train, scenarios_position, 
+                                                                A, B, balance_weights, inital_items)]
 
                 pool = mp.Pool(cpu)
                 # parallelising models
                 samples = pool.starmap(sample_items_adaptive, [(number_items, iterations, sampling_name, chosen_scenarios, scenarios, 
                                                                 subscenarios_position, responses, scores_train, scenarios_position, 
-                                                                A, B, balance_weights, n_model, inital_items) for n_model, responses in enumerate(responses_test)])
+                                                                A, B, balance_weights, inital_items) for n_model, responses in enumerate(responses_test)])
                 pool.close()
-                pool.join()    
-
+                pool.join() 
                 for n_model, samples_model in enumerate(samples):
-                    item_weights_model, seen_items_model, unseen_items_model = samples_model
+                    item_weights_model, seen_items_model, unseen_items_model, sampling_time = samples_model
+                    sampling_time = np.array(sampling_time).mean()
                     for number_item in number_items:
                         item_weights_dic[sampling_name][number_item][n_model] = item_weights_model[number_item]
                         seen_items_dic[sampling_name][number_item][n_model] = seen_items_model[number_item]
                         unseen_items_dic[sampling_name][number_item][n_model] = unseen_items_model[number_item]
-                breakpoint()
+                        sampling_time_dic[sampling_name][number_item].append(sampling_time)
             else:
-                item_weights_dic[sampling_name], seen_items_dic[sampling_name], unseen_items_dic[sampling_name] = {}, {}, {}
+                item_weights_dic[sampling_name], seen_items_dic[sampling_name], unseen_items_dic[sampling_name], sampling_time_dic[sampling_name] = {}, {}, {}, {}
                 pool = mp.Pool(cpu)
                 # parallelising number of items
                 samples = pool.starmap(sample_items, [(number_item, iterations, sampling_name, chosen_scenarios, scenarios, 
@@ -191,9 +196,8 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
                                                        A, B, balance_weights) for number_item in number_items])
                 pool.close()
                 pool.join()
-                breakpoint()
                 for i,number_item in enumerate(number_items):
-                    item_weights_dic[sampling_name][number_item], seen_items_dic[sampling_name][number_item], unseen_items_dic[sampling_name][number_item] = samples[i]
+                    item_weights_dic[sampling_name][number_item], seen_items_dic[sampling_name][number_item], unseen_items_dic[sampling_name][number_item], sampling_time_dic[sampling_name][number_item] = samples[i]
                 
         #saving points
         if bench=='irt_mmlu' and abs(rows_to_hide[1]-rows_to_hide[0])==1: #the last condition means 'split noniid'

@@ -8,6 +8,7 @@ from tqdm import tqdm
 import time
 from irt import *
 from utils import *
+from copy import copy
 
 def get_random(scenarios_choosen, scenarios, number_item, subscenarios_position, responses_test, balance_weights, random_seed):
     
@@ -88,16 +89,17 @@ def select_initial_adaptive_items(A, B, Theta, number_item, try_size=2000, seed=
 
 
 def run_adaptive_selection(responses_test, 
-                           inital_items, 
+                           initial_items, 
                            scenarios_choosen, 
                            scenarios_position, 
                            A, B, num_items, 
+                           balance_weights,
                            balance=True
                            ):
-    seen_items, all_items, mats = inital_items
+    seen_items, all_items, mats = initial_items
 
-    min_items, max_items = min(num_items), max(num_items)
-    max_count, min_count = max_items*len(scenarios_choosen), min_items*len(scenarios_choosen)
+    num_items_count = [len(scenarios_choosen) * n for n in num_items]
+    max_count, min_count = max(num_items_count), min(num_items_count)
     item_weights, all_seen_items, all_unseen_items = {}, {}, {}
     
     if (min_count / 3) < len(seen_items):
@@ -116,11 +118,13 @@ def run_adaptive_selection(responses_test,
 
     while True:
         for scenario in scenarios_choosen:
-            if count in num_items:
+            if count in num_items_count:
                 # save intermediate num_items
-                item_weights[count] = {scenario: [occurrences/count] for scenario, occurrences in scenario_occurrences.items()}
-                all_seen_items[count] = seen_items
-                all_unseen_items[count] = unseen_items
+                current_num_items = int(count / len(scenarios_choosen))
+                
+                item_weights[current_num_items] = get_weighing_adaptive(seen_items, unseen_items, scenarios_position, scenarios_choosen, A, B, balance_weights)
+                all_seen_items[current_num_items] = copy(seen_items)
+                all_unseen_items[current_num_items] = copy(unseen_items)
 
             if count >= max_count:
                 # return if largest num_items is reached
@@ -162,12 +166,13 @@ def find_scenario_from_position(scenarios_position, position):
             return scenario
     return None
 
-def get_gpirt_weighing(seen_items: list,
+def get_weighing_adaptive(seen_items: list,
                        unseen_items: list, 
                        scenarios_position: list,
                        chosen_scenarios: list,
                        A: np.array,
                        B: np.array,
+                       balance_weights: np.array,
                        ) -> list:
     """
     Gets weights for unseen items based on proximity in IRT parameter space
@@ -187,7 +192,10 @@ def get_gpirt_weighing(seen_items: list,
 
             weights[scenario] = get_weights(IRT_params, 
                                             scenario_seen_items,
-                                            scenario_idxs)
+                                            scenario_idxs,
+                                            balance_weights,
+                                            scenario,
+                                            scenarios_position,)
     else:
         weights['all'] = get_weights(IRT_params, 
                                      seen_items,
@@ -197,11 +205,20 @@ def get_gpirt_weighing(seen_items: list,
 
 def get_weights(IRT_params: np.array,
                 seen_items: list,
-                all_items: list):
+                all_items: list,
+                balance_weights: np.array,
+                scenario: str,
+                scenarios_position: list,
+                ):
     """
     Assign each item a seen item based on distance in IRT-parameter space.
     Calculate weights for each seen item based on other items assigned to it.
     """
+
+    assert np.mean(balance_weights<0)==0
+    norm_balance_weights = balance_weights[scenarios_position[scenario]]
+    norm_balance_weights /= norm_balance_weights.sum()
+
     # Prepare parameter space
     params_seen = IRT_params[:, :, seen_items]
     params_all = IRT_params[:, :, all_items]
@@ -217,11 +234,10 @@ def get_weights(IRT_params: np.array,
         # Find the index of the closest seen item
         closest_indices[i] = np.argmin(distances)
     
-    # Count the frequency of each index in closest_indices
-    frequency = np.bincount(closest_indices, minlength=params_seen.shape[2])
+    item_weights = np.array([norm_balance_weights[closest_indices==i].sum() for i in range(len(seen_items))])
 
-    # Normalize the frequencies to get weights
-    return frequency / np.sum(frequency)
+    return item_weights
+
 
 def get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, balance_weights, random_seed):
     """
@@ -310,7 +326,7 @@ def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scena
     return item_weights_dic, seen_items_dic, unseen_items_dic, elapsed_time
 
 def sample_items_adaptive(number_items, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, 
-                 responses_model, scores_train, scenarios_position, A, B, balance_weights, n_model,
+                 responses_model, scores_train, scenarios_position, A, B, balance_weights,
                  initial_items=None, balance=True,
                  ):
     assert 'adaptive' in sampling_name
@@ -320,7 +336,7 @@ def sample_items_adaptive(number_items, iterations, sampling_name, chosen_scenar
     item_weights_model, seen_items_model, unseen_items_model = run_adaptive_selection(responses_model, initial_items, 
                                                                                       chosen_scenarios, 
                                                                                       scenarios_position, A, B, 
-                                                                                      number_items, balance=balance)
+                                                                                      number_items, balance_weights, balance=balance)
     end_time = time.time()
     elapsed_time = end_time - start_time
 
