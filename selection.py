@@ -87,34 +87,48 @@ def select_initial_adaptive_items(A, B, Theta, number_item, try_size=2000, seed=
     return seen_items, all_items, mats
 
 
-def run_adaptive_selection(responses_test, seen_items, all_items, scenarios_choosen, scenarios_position, A, B, mats, num_items, balance=True, ki=False):
-    target_count = num_items*len(scenarios_choosen)   
+def run_adaptive_selection(responses_test, 
+                           inital_items, 
+                           scenarios_choosen, 
+                           scenarios_position, 
+                           A, B, num_items, 
+                           balance=True
+                           ):
+    seen_items, all_items, mats = inital_items
+
+    min_items, max_items = min(num_items), max(num_items)
+    max_count, min_count = max_items*len(scenarios_choosen), min_items*len(scenarios_choosen)
+    item_weights, all_seen_items, all_unseen_items = {}, {}, {}
     
-    if (target_count / 3) < len(seen_items):
-        seen_items = seen_items[:int(target_count / 3)]
+    if (min_count / 3) < len(seen_items):
+        seen_items = seen_items[:int(min_count / 3)]
 
     unseen_items = [i for i in all_items if i not in seen_items]
 
     #assert len(seen_items) <= target_count
     count = len(seen_items)
         
-    scenario_counts = {scenario: 0 for scenario in scenarios_choosen}
+    scenario_occurrences = {scenario: 0 for scenario in scenarios_choosen}
     for item in seen_items:
-        scenario_item = find_scenario_for_position(scenarios_position, item)
-        scenario_counts[scenario_item] += 1
+        scenario_of_item = find_scenario_from_position(scenarios_position, item)
+        scenario_occurrences[scenario_of_item] += 1
 
     while True:
         for scenario in scenarios_choosen:
+            if count in num_items:
+                # save intermediate num_items
+                item_weights[count] = {scenario: [occurrences/count] for scenario, occurrences in scenario_occurrences.items()}
+                all_seen_items[count] = seen_items
+                all_unseen_items[count] = unseen_items
+
+            if count >= max_count:
+                # return if largest num_items is reached
+                return item_weights, all_seen_items, all_unseen_items
             
-            if count >= target_count:
-                item_weights = {scenario: final_count/target_count for scenario, final_count in scenario_counts.items()}
-                return item_weights, seen_items, unseen_items 
+            seen_items, unseen_items, scenario_of_item = select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, 
+                                                                                   scenarios_position, A, B, mats, balance)
             
-            if not ki:
-                seen_items, unseen_items, scenario_item = select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance)
-            else:
-                seen_items, unseen_items = select_next_adaptive_item_KI(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance)
-            scenario_counts[scenario_item] += 1
+            scenario_occurrences[scenario_of_item] += 1
             count += 1
 
 def select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario, scenarios_position, A, B, mats, balance):
@@ -137,101 +151,15 @@ def select_next_adaptive_item(responses_test, seen_items, unseen_items, scenario
     next_item = unseen_items_scenario[np.argmax(np.linalg.det(I_seen[None, :, :] + I_unseen))]                    
     seen_items.append(next_item)
     unseen_items.remove(next_item)
-    scenario_item = find_scenario_for_position(scenarios_position, next_item)
+    scenario_item = find_scenario_from_position(scenarios_position, next_item)
 
     return seen_items, unseen_items, scenario_item
 
-def find_scenario_for_position(scenarios_position, position):
+def find_scenario_from_position(scenarios_position, position):
     for scenario, positions in scenarios_position.items():
         if position in positions:
             return scenario
     return None
-
-def select_next_adaptive_item_KI(responses_test, 
-                                 seen_items, 
-                                 unseen_items, 
-                                 scenario, 
-                                 scenarios_position, 
-                                 A, B, mats, 
-                                 balance):
-
-    # Define the KL divergence for a single item. (Equation 7)
-    def kl_divergence(theta_0, theta_hat, xj, a, b):
-        f_theta_0 = item_response_function(xj, theta_0, a, b)
-        f_theta_hat = item_response_function(xj, theta_hat, a, b)
-        if f_theta_0 > 0 and f_theta_hat > 0:
-            return f_theta_0 * np.log(f_theta_0 / f_theta_hat)
-        else:
-            return 0
-
-    # Define the bounds for the integration (as in Equation 8/9)
-    def integration_bounds(theta_p0, k, r):
-        lower_bound = theta_p0 - r / np.sqrt(k)
-        upper_bound = theta_p0 + r / np.sqrt(k)
-        return lower_bound, upper_bound
-
-    # Integrate the KL divergence over the p-dimensional space.
-    def multivariate_ki(theta_hat, k, a, b, xj, r=3):
-        """ k -> number of seen samples  
-            r -> some constant usually set to 3
-            xj -> binary item response
-            """
-        
-        # Define the limits for each dimension.
-        #limits = [integration_bounds(th, k, r) for th in theta.squeeze()]
-        limits = [integration_bounds(theta_hat, k, r)]
-
-        def integrand(theta_0, theta_hat, xj, a, b):
-            return kl_divergence(theta_0, theta_hat, xj, a, b)
-
-        ki, _ = quad(integrand, limits[0][0], limits[0][1], args=(theta_hat, xj, a, b))
-        #ki, _ = nquad(integrand, limits)
-
-        return ki
-
-    D = A.shape[1]
-
-    if balance:
-        unseen_items_scenario = [u for u in unseen_items if u in scenarios_position[scenario]]
-    else:
-        unseen_items_scenario = unseen_items
-
-    optimal_theta = estimate_ability_parameters(responses_test, seen_items, A, B)
-    
-    ki_values = []
-    for unseen_item in unseen_items_scenario:
-        item_response = responses_test[unseen_item]
-
-        a = A[:, :, [unseen_item]]
-        b = B[:, :, [unseen_item]]
-
-        ki_value = multivariate_ki(optimal_theta, k=len(seen_items),
-                                   a=a, b=b, xj=item_response,
-                                   r=3)
-
-        ki_values.append(ki_value)
-    
-    '''
-    # batched: looks like you cannot do batched integration. 
-    # However, parallel processing (i.e. multithreading) might be possible
-
-    item_response = responses_test[unseen_items_scenario]
-
-    a = A[:, :, unseen_items_scenario]
-    b = B[:, :, unseen_items_scenario]
-
-    ki_values = multivariate_ki(optimal_theta, k=len(seen_items),
-                                   a=a, b=b, xj=item_response,
-                                   r=8)
-    '''
-
-    next_item = unseen_items_scenario[np.argmax(ki_values)]
-
-    seen_items.append(next_item)
-    unseen_items.remove(next_item)
-
-    return seen_items, unseen_items
-
 
 def get_gpirt_weighing(seen_items: list,
                        unseen_items: list, 
@@ -353,7 +281,11 @@ def get_anchor_points_weights(scores_train, scenarios_position, scenario, number
     
     return anchor_points, anchor_weights
 
-def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, responses_test, scores_train, scenarios_position, A, B, balance_weights, inital_items=None):
+def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, 
+                 responses_test, scores_train, scenarios_position, A, B, balance_weights
+                 ):
+    assert 'adaptive' not in sampling_name
+
     item_weights_dic, seen_items_dic, unseen_items_dic = {}, {}, {}
 
     for it in range(iterations):
@@ -365,20 +297,24 @@ def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scena
 
         elif sampling_name == 'anchor-irt':
             _, item_weights, seen_items, unseen_items = get_anchor(np.vstack((A.squeeze(), B.reshape((1,-1)))), chosen_scenarios, scenarios_position, number_item, random_seed=it)
-        elif 'adaptive' in sampling_name:
-            _, item_weights, seen_items, unseen_items = get_anchor(np.vstack((A.squeeze(), B.reshape((1,-1)))), chosen_scenarios, scenarios_position, number_item, balance_weights, random_seed=it)
-            continue
 
         item_weights_dic[it], seen_items_dic[it], unseen_items_dic[it] = item_weights, seen_items, unseen_items
 
-    if 'adaptive' in sampling_name:
-        balance = True
-        seen_items, all_items, mats = inital_items
-        for n_model, responses in enumerate(responses_test):
-            item_weights_dic[n_model], seen_items_dic[n_model], unseen_items_dic[n_model] = run_adaptive_selection(responses, seen_items, all_items, 
-                                                                                                                    chosen_scenarios, 
-                                                                                                                    scenarios_position, A, B, 
-                                                                                                                    mats, number_item, balance=balance, ki=False)
 
     return item_weights_dic, seen_items_dic, unseen_items_dic
 
+def sample_items_adaptive(number_items, iterations, sampling_name, chosen_scenarios, scenarios, subscenarios_position, 
+                 responses_model, scores_train, scenarios_position, A, B, balance_weights, n_model,
+                 initial_items=None, balance=True,
+                 ):
+    assert 'adaptive' in sampling_name
+
+    #_, item_weights, seen_items, unseen_items = get_anchor(np.vstack((A.squeeze(), B.reshape((1,-1)))), chosen_scenarios, scenarios_position, number_item, balance_weights, random_seed=it)
+    
+    # list of different num_items results for one model
+    item_weights_model, seen_items_model, unseen_items_model = run_adaptive_selection(responses_model, initial_items, 
+                                                                                      chosen_scenarios, 
+                                                                                      scenarios_position, A, B, 
+                                                                                      number_items, balance=balance)
+
+    return item_weights_model, seen_items_model, unseen_items_model
