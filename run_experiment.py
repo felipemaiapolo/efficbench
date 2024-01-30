@@ -31,7 +31,7 @@ assert iterations>0
 # Defining other parameters
 
 Ds = [2, 5, 10, 15, 20]
-sampling_names = ['adaptive'] #['random'] #['random', 'anchor', 'anchor-irt', 'adaptive', ] 
+sampling_names = ['random', 'anchor', 'adaptive'] #['random', 'anchor', 'anchor-irt', 'adaptive', ] 
 
 scenario_name = 'full' #we are evaluating all scenarios at once (this is just a nomination)
 
@@ -44,15 +44,20 @@ if bench in ['lb','mmlu']:
         data = pickle.load(handle)
     
     #scenarios
-    scenarios = lb_scenarios
-    if bench == 'mmlu':
-        scenarios = {'mmlu':scenarios['mmlu']}
+    scenarios = {'mmlu': lb_scenarios['mmlu']} if bench == 'mmlu' else lb_scenarios
     
     #split
     if split == 'iid':
-        set_of_rows = [list(range(0,len(data['models']),4))]
+        set_of_rows = [list(range(0,len(data['models']),4)),
+                       list(range(1,len(data['models'])+1,4)),
+                       list(range(2,len(data['models'])+2,4)),
+                       list(range(3,len(data['models'])+3,4))] #[list(range(0,len(data['models']),4))]
     else:
-        set_of_rows = [list(range(int(len(data['models'])/4)))]
+        set_of_rows = [list(range(int(len(data['models'])/4))),
+                       list(range(int(len(data['models'])/4), int(len(data['models'])/2))),
+                       list(range(int(len(data['models'])/2), 3*int(len(data['models'])/4))),
+                       list(range(3*int(len(data['models'])/4), int(len(data['models'])))),] #[list(range(int(len(data['models'])/4)))]
+        
     print(len(set_of_rows[0]), len(data['models']))
 
 elif bench == 'helm':
@@ -88,9 +93,16 @@ elif bench == 'alpaca':
     
     #split
     if split == 'iid':
-        set_of_rows = [list(range(0,len(data['models']),4))]
+        set_of_rows = [list(range(0,len(data['models']),4)),
+                       list(range(1,len(data['models'])+1,4)),
+                       list(range(2,len(data['models'])+2,4)),
+                       list(range(3,len(data['models'])+3,4))]
     else:
-        set_of_rows = [list(range(int(len(data['models'])/4)))]
+        set_of_rows = [list(range(int(len(data['models'])/4))),
+                       list(range(int(len(data['models'])/4), int(len(data['models'])/2))),
+                       list(range(int(len(data['models'])/2), 3*int(len(data['models'])/4))),
+                       list(range(3*int(len(data['models'])/4), int(len(data['models'])))),]
+        
     print(len(set_of_rows[0]), len(data['models']))
           
 # Loading data
