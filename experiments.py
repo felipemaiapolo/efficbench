@@ -103,7 +103,6 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         for D in tqdm(Ds):
             # Train IRT model for the current dimension (D)
             model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val/'
-            train_irt_model(dataset_name, model_name, D, lr, epochs, device)
             # Load trained IRT model parameters
             try:
                 A, B, Theta = load_irt_parameters(model_name)
@@ -159,8 +158,6 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
 
         create_irt_dataset(responses_train, dataset_name)
         model_name = f'models/{bench}/row-{rows_to_hide_str}_D-validate_scenario-{scenario_name}/'
-        train_irt_model(dataset_name, model_name, D, lr, epochs, device)
-
         # Load the final IRT model
         try:
                 A, B, Theta = load_irt_parameters(model_name)
