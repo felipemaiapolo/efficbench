@@ -48,12 +48,9 @@ if bench in ['lb','mmlu']:
     
     #split
     if split == 'iid':
-        set_of_rows = [list(range(0,len(data['models']),4)),
-                       list(range(1,len(data['models'])+1,4)),
-                       list(range(2,len(data['models'])+2,4)),
-                       list(range(3,len(data['models'])+3,4))] #[list(range(0,len(data['models']),4))]
+        set_of_rows = [list(range(0,len(data['models']),4))]
     else:
-        set_of_rows = [list(range(int(len(data['models'])/4))),] #[list(range(int(len(data['models'])/4)))]
+        set_of_rows = [list(range(int(len(data['models'])/4))),]
         
     print(len(set_of_rows[0]), len(data['models']))
 
