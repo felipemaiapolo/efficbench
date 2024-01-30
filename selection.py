@@ -316,12 +316,16 @@ def sample_items(number_item, iterations, sampling_name, chosen_scenarios, scena
             _, item_weights, seen_items, unseen_items = get_anchor(scores_train, chosen_scenarios, scenarios_position, number_item, balance_weights, random_seed=it)
 
         elif sampling_name == 'anchor-irt':
-            _, item_weights, seen_items, unseen_items = get_anchor(np.vstack((A.squeeze(), B.reshape((1,-1)))), chosen_scenarios, scenarios_position, number_item, random_seed=it)
+            _, item_weights, seen_items, unseen_items = get_anchor(np.vstack((A.squeeze(), B.reshape((1,-1)))), chosen_scenarios, scenarios_position, number_item, balance_weights, random_seed=it)
+
+        else:
+            raise NotImplementedError
+            
 
         item_weights_dic[it], seen_items_dic[it], unseen_items_dic[it] = item_weights, seen_items, unseen_items
 
     end_time = time.time()
-    elapsed_time = end_time - start_time
+    elapsed_time = (end_time - start_time)/iterations
 
     return item_weights_dic, seen_items_dic, unseen_items_dic, elapsed_time
 
