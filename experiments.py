@@ -34,7 +34,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
     assert bench in ['irt_helm', 'irt_lb', 'irt_lb_perf', 'irt_mmlu', 'irt_alpaca', 'irt_mmlu_fields']
     assert np.mean([s in ['random', 'anchor', 'anchor-irt', 'adaptive'] for s in sampling_names]) == 1
     
-    number_items = [10, 20, 30, 60, 100]  # Number of items to consider in evaluations
+    number_items = [10, 30, 60, 100]  # Number of items to consider in evaluations
 
     cpu = mp.cpu_count()  # Number of available CPU cores
     epochs = 2000  # Number of epochs for IRT model training (package default is 2000)
@@ -53,6 +53,8 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         scores = create_responses(chosen_scenarios, scenarios, data)
         
         balance_weights = np.ones(scores.shape[1]) #for scenario in ['civil_comments', 'mmlu'], some items need to be downweighted, for other scenarios not
+        
+        #if any change is made below, we will also need to update 'load_scores' in utils.py
         if 'civil_comments' in chosen_scenarios:
             balance_weights[scenarios_position['civil_comments']] = scores[:,scenarios_position['civil_comments']].max(axis=0)
             scores[:,scenarios_position['civil_comments']] = (scores[:,scenarios_position['civil_comments']]>0).astype(float)
@@ -101,7 +103,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         for D in tqdm(Ds):
             # Train IRT model for the current dimension (D)
             model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val/'
-            #train_irt_model(dataset_name, model_name, D, lr, epochs, device)
+            train_irt_model(dataset_name, model_name, D, lr, epochs, device)
             # Load trained IRT model parameters
             try:
                 A, B, Theta = load_irt_parameters(model_name)
@@ -157,7 +159,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
 
         create_irt_dataset(responses_train, dataset_name)
         model_name = f'models/{bench}/row-{rows_to_hide_str}_D-validate_scenario-{scenario_name}/'
-        #train_irt_model(dataset_name, model_name, D, lr, epochs, device)
+        train_irt_model(dataset_name, model_name, D, lr, epochs, device)
 
         # Load the final IRT model
         try:
