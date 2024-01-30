@@ -8,6 +8,7 @@ from selection import *
 from utils import *
 from acc import *
 
+
 def evaluate_scenarios(data, scenario_name, chosen_scenarios, 
                        scenarios, set_of_rows, Ds, iterations, device, bench, 
                        sampling_names = ['random', 'anchor', 'anchor-irt']):
@@ -102,7 +103,11 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
             model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val/'
             #train_irt_model(dataset_name, model_name, D, lr, epochs, device)
             # Load trained IRT model parameters
-            A, B, Theta = load_irt_parameters(model_name)
+            try:
+                A, B, Theta = load_irt_parameters(model_name)
+            except:
+                train_irt_model(dataset_name, model_name, D, lr, epochs, device)
+                A, B, Theta = load_irt_parameters(model_name)
             # Determine seen and unseen items for validation
             seen_items = list(range(0, responses_train.shape[1], 2))
             unseen_items = list(range(1, responses_train.shape[1], 2))
@@ -155,8 +160,12 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         #train_irt_model(dataset_name, model_name, D, lr, epochs, device)
 
         # Load the final IRT model
-        A, B, Theta = load_irt_parameters(model_name)
-
+        try:
+                A, B, Theta = load_irt_parameters(model_name)
+        except:
+                train_irt_model(dataset_name, model_name, D, lr, epochs, device)
+                A, B, Theta = load_irt_parameters(model_name)
+                
         print("\niv) sampling")
         item_weights_dic, seen_items_dic, unseen_items_dic, sampling_time_dic = {}, {}, {}, {}
         for sampling_name in tqdm(sampling_names):  
