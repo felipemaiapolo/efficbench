@@ -6,6 +6,9 @@ import os
 import autograd.numpy as np
 from autograd import grad
 from tqdm import tqdm
+import pickle
+import matplotlib.pyplot as plt
+import matplotlib
 
 
 def get_lambda(b, v):
@@ -236,3 +239,86 @@ lb_scenarios = {'harness_truthfulqa_mc_0':['harness_truthfulqa_mc_0'],
 alpaca_scenarios = {#'alpaca_v1':['alpaca_v1'],
                     'alpaca_v2':['alpaca_v2'],
 }
+
+
+#### plots
+#style = {"alpha":.25, "linewidth":1.25, "markeredgewidth":1, "elinewidth":1.5, "capsize":3, "linestyle":''}
+style = {"alpha":1, "markersize":3, "markeredgewidth":1, "elinewidth":1, "capsize":3, "linestyle":''}
+
+def plot_perf_lines(table_avg, table_std, title, xlabel, ylabel, ylim,
+                    legend=False, error_bar=False, show_title=True, show_xlabel=True, show_ylabel=True):
+    markers = ['o', 'v', '*', 'x', 's','p']
+    jitters = [6.3,3.7,1.3,-1.3,-3.7,-6.3]
+    colors = matplotlib.rcParams['axes.prop_cycle'].by_key()['color'][:9]
+    j=0
+    for method, values in table_avg.items():
+        x = np.array(list(values.keys()))
+        y = np.array(list(values.values()))
+        s = np.array(list(table_std[method].values()))
+        
+        if error_bar: 
+            plt.errorbar(x+jitters[j], y, color=colors[j], yerr=s, label=method, marker=markers[j], **style)
+        else: 
+            plt.plot(x, y, label=method)
+
+        j+=1
+    if show_xlabel: plt.xlabel(xlabel, size=11)
+    if show_ylabel: plt.ylabel(ylabel, size=11)
+    plt.ylim(ylim[0], ylim[1])
+    if show_title:
+        plt.title(title)
+    else:
+        pass
+    
+    tick_label_size = 10  # Example size, adjust as needed
+    plt.tick_params(axis='x', labelsize=tick_label_size)
+    plt.tick_params(axis='y', labelsize=tick_label_size)
+    
+    if legend: plt.legend(loc='upper center', ncols=6, bbox_to_anchor=(-1.5, -.35))
+    plt.grid(alpha=.2)
+    #plt.grid(which='major', color='black', linestyle='-')
+    #plt.grid(which='minor', color='gray', linestyle=':')
+    #plt.show()
+    
+def winrate(x,axis):
+    n = x.shape[axis]
+    return(np.argsort(np.argsort(x, axis=axis), axis=axis)/n)
+
+def load_scores(bench, split):
+    with open(f'results/accs_{bench}_split-{split}_iterations-10.pickle', 'rb') as handle:
+        data = pickle.load(handle)
+    
+    if bench=='mmlu':
+        with open(f'data/lb.pickle', 'rb') as handle:
+            data2 = pickle.load(handle)
+    elif bench=='alpaca':
+        with open(f'data/alpaca_v2.pickle', 'rb') as handle:
+            data2 = pickle.load(handle)
+    else:
+        with open(f'data/{bench}.pickle', 'rb') as handle:
+            data2 = pickle.load(handle)
+    if bench=='lb':scenarios = lb_scenarios
+    elif bench=='mmlu':scenarios = {'mmlu':lb_scenarios['mmlu']}
+    elif bench=='helm':scenarios = helm_scenarios
+    elif bench=='alpaca':scenarios = alpaca_scenarios
+    elif bench=='mmlu_fields':scenarios = {'mmlu':lb_scenarios['mmlu']}
+    else: raise NotImplementedError
+    
+    scenarios_position, subscenarios_position = prepare_data(scenarios, scenarios, data2)
+    scores = create_responses(scenarios, scenarios, data2)
+        
+    balance_weights = np.ones(scores.shape[1]) #for scenario=='civil_comments', some items need to be downweighted, for other scenarios not
+    if 'civil_comments' in scenarios:
+        balance_weights[scenarios_position['civil_comments']] = scores[:,scenarios_position['civil_comments']].max(axis=0)
+        scores[:,scenarios_position['civil_comments']] = (scores[:,scenarios_position['civil_comments']]>0).astype(float)
+    if 'mmlu' in scenarios:
+        N = len(scenarios_position['mmlu'])
+        n_sub = len(scenarios['mmlu'])
+        for sub in scenarios['mmlu']:
+            n_i = len(subscenarios_position['mmlu'][sub])
+            balance_weights[subscenarios_position['mmlu'][sub]] = N/(n_sub*n_i)
+    scores = balance_weights*scores
+    
+    scores = np.vstack([scores[:,scenarios_position[scenario]].mean(axis=1) for scenario in scenarios])
+    
+    return scores[:,list(data.keys())]

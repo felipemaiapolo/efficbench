@@ -52,6 +52,8 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         scores = create_responses(chosen_scenarios, scenarios, data)
         
         balance_weights = np.ones(scores.shape[1]) #for scenario in ['civil_comments', 'mmlu'], some items need to be downweighted, for other scenarios not
+        
+        #if any change is made below, we will also need to update 'load_scores' in utils.py
         if 'civil_comments' in chosen_scenarios:
             balance_weights[scenarios_position['civil_comments']] = scores[:,scenarios_position['civil_comments']].max(axis=0)
             scores[:,scenarios_position['civil_comments']] = (scores[:,scenarios_position['civil_comments']]>0).astype(float)
