@@ -61,8 +61,9 @@ def calculate_accuracies(j, sampling_names, item_weights_dic, seen_items_dic, un
                 # Update accuracies 
                 for scenario in chosen_scenarios:
                     naive = (item_weights[scenario]*scores_test[j][[s for s in seen_items if s in scenarios_position[scenario]]]).sum()
-                    pirt = compute_acc_pirt(naive, scenario, scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, thresh=None)
-                    cirt = compute_acc_pirt(naive, scenario, scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, thresh=0.5)
+                    data_part_pirt = ((balance_weights*scores_test[j])[[s for s in seen_items if s in scenarios_position[scenario]]]).mean()
+                    pirt = compute_acc_pirt(data_part_pirt, scenario, scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, thresh=None)
+                    cirt = compute_acc_pirt(data_part_pirt, scenario, scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, thresh=0.5)
                     lambd = opt_lambds[sampling_name+'_gpirt'][scenario][number_item]
 
                     accs[rows_to_hide[j]][number_item][sampling_name+'_naive'][scenario].append(naive)
@@ -84,8 +85,9 @@ def calculate_accuracies(j, sampling_names, item_weights_dic, seen_items_dic, un
                     # Update accuracies 
                     for scenario in chosen_scenarios:
                         naive = (item_weights[scenario]*scores_test[j][[s for s in seen_items if s in scenarios_position[scenario]]]).sum()
-                        pirt = compute_acc_pirt(naive, scenario, scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, thresh=None)
-                        cirt = compute_acc_pirt(naive, scenario, scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, thresh=0.5)
+                        data_part_pirt = ((balance_weights*scores_test[j])[[s for s in seen_items if s in scenarios_position[scenario]]]).mean()
+                        pirt = compute_acc_pirt(data_part_pirt, scenario, scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, thresh=None)
+                        cirt = compute_acc_pirt(data_part_pirt, scenario, scenarios_position, seen_items, unseen_items, A, B, new_theta, balance_weights, thresh=0.5)
                         lambd = opt_lambds[sampling_name+'_gpirt'][scenario][number_item]
 
                         accs[rows_to_hide[j]][number_item][sampling_name+'_naive'][scenario].append(naive)
