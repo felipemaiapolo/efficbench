@@ -122,7 +122,8 @@ def run_adaptive_selection(responses_test,
                 # save intermediate num_items
                 current_num_items = int(count / len(scenarios_choosen))
                 
-                item_weights[current_num_items] = get_weighing_adaptive(seen_items, unseen_items, scenarios_position, scenarios_choosen, A, B, balance_weights)
+                #item_weights[current_num_items] = get_weighing_adaptive(seen_items, unseen_items, scenarios_position, scenarios_choosen, A, B, balance_weights)
+                item_weights[current_num_items] = {scenario: np.array([occurrences/(count**2)]*occurrences) for scenario, occurrences in scenario_occurrences.items()}
                 all_seen_items[current_num_items] = copy(seen_items)
                 all_unseen_items[current_num_items] = copy(unseen_items)
 
