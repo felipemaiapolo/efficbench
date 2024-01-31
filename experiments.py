@@ -204,16 +204,17 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
                     item_weights_dic[sampling_name][number_item], seen_items_dic[sampling_name][number_item], unseen_items_dic[sampling_name][number_item], sampling_time_dic[sampling_name][number_item] = samples[i]
                 
         #saving points
-        if bench=='irt_mmlu' and abs(rows_to_hide[1]-rows_to_hide[0])==1: #the last condition means 'split noniid'
+        if rows_to_hide==set_of_rows[0] and abs(rows_to_hide[1]-rows_to_hide[0])!=1: #the last condition means 'split iid'
             dic = {}
             dic['item_weights'] = item_weights_dic
             dic['seen_items'] = seen_items_dic
-            dic['unseen_items'] = unseen_items_dic
+            dic['scenarios_position'] = scenarios_position
+            dic['subscenarios_position'] = subscenarios_position
             dic['A'] = A
             dic['B'] = B
-            with open('results/samples_mmlu.pickle', 'wb') as handle:
+            with open(f'results/samples_{bench}.pickle', 'wb') as handle:
                 pickle.dump(dic, handle, protocol=pickle.HIGHEST_PROTOCOL)
-            
+
 
         print("\nv) computing accuracies")
         start_time = time.time()

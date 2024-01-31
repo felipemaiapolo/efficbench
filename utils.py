@@ -285,7 +285,7 @@ def winrate(x,axis):
     return(np.argsort(np.argsort(x, axis=axis), axis=axis)/n)
 
 def load_scores(bench, split):
-    with open(f'results/accs_{bench}_split-{split}_iterations-10.pickle', 'rb') as handle:
+    with open(f'results/accs_{bench}_split-{split}_iterations-5.pickle', 'rb') as handle:
         data = pickle.load(handle)
     
     if bench=='mmlu':

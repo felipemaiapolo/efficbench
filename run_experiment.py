@@ -6,7 +6,7 @@ from scipy import stats
 from experiments import *
 from utils import *
 
-#python run_experiment.py --bench 'lb' --split 'iid' --iterations 10 --device 'cuda'
+#python run_experiment.py --bench 'lb' --split 'iid' --iterations 5 --device 'cuda'
 
 # ## Definitions
 
@@ -31,7 +31,7 @@ assert iterations>0
 # Defining other parameters
 
 Ds = [2, 5, 10, 15, 20]
-sampling_names = ['random', 'anchor', 'anchor-irt', 'adaptive'] #['random', 'anchor', 'anchor-irt', 'adaptive', ] 
+sampling_names = ['random', 'anchor', 'anchor-irt', 'adaptive'] #
 
 scenario_name = 'full' #we are evaluating all scenarios at once (this is just a nomination)
 
