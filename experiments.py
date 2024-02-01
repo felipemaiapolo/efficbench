@@ -104,8 +104,11 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
             # Train IRT model for the current dimension (D)
             model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val/'
             # Load trained IRT model parameters
-            train_irt_model(dataset_name, model_name, D, lr, epochs, device)
-            A, B, Theta = load_irt_parameters(model_name)
+            try:
+                A, B, Theta = load_irt_parameters(model_name)
+            except:
+                train_irt_model(dataset_name, model_name, D, lr, epochs, device)
+                A, B, Theta = load_irt_parameters(model_name)
             # Determine seen and unseen items for validation
             seen_items = list(range(0, responses_train.shape[1], 2))
             unseen_items = list(range(1, responses_train.shape[1], 2))
@@ -156,8 +159,11 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         create_irt_dataset(responses_train, dataset_name)
         model_name = f'models/{bench}/row-{rows_to_hide_str}_D-validate_scenario-{scenario_name}/'
         # Load the final IRT model
-        train_irt_model(dataset_name, model_name, D, lr, epochs, device)
-        A, B, Theta = load_irt_parameters(model_name)
+        try:
+                A, B, Theta = load_irt_parameters(model_name)
+        except:
+                train_irt_model(dataset_name, model_name, D, lr, epochs, device)
+                A, B, Theta = load_irt_parameters(model_name)
                 
         print("\niv) sampling")
         item_weights_dic, seen_items_dic, unseen_items_dic, sampling_time_dic = {}, {}, {}, {}
@@ -206,7 +212,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
             dic['subscenarios_position'] = subscenarios_position
             dic['A'] = A
             dic['B'] = B
-            with open(f'results/samples_{bench}.pickle', 'wb') as handle:
+            with open(f'results/samples_{bench[4:]}_iterations-{iterations}.pickle', 'wb') as handle:
                 pickle.dump(dic, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
