@@ -240,6 +240,16 @@ alpaca_scenarios = {#'alpaca_v1':['alpaca_v1'],
                     'alpaca_v2':['alpaca_v2'],
 }
 
+icl_ct_scenarios = {'7b_instruction_tuned':['7b_instruction_tuned'] , 
+                    '13b_instruction_tuned': ['13b_instruction_tuned'] ,
+                    '30b_instruction_tuned': ['30b_instruction_tuned'] ,
+                    '65b_instruction_tuned': ['65b_instruction_tuned'] ,
+                    '7b_vanilla': ['7b_vanilla'] ,
+                    '13b_vanilla': ['13b_vanilla'] ,
+                    '30b_vanilla': ['30b_vanilla'] ,
+                    '65b_vanilla': ['65b_vanilla',]
+}
+
 
 #### plots
 #style = {"alpha":.25, "linewidth":1.25, "markeredgewidth":1, "elinewidth":1.5, "capsize":3, "linestyle":''}

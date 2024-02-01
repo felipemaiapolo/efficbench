@@ -13,7 +13,7 @@ from utils import *
 # User input
 parser = argparse.ArgumentParser(description='Example script with named arguments.')
 
-parser.add_argument('--bench', type=str, help='Benchmark (helm, lb, mmlu, alpaca)', default = 'lb')
+parser.add_argument('--bench', type=str, help='Benchmark (helm, lb, mmlu, alpaca, icl_ct)', default = 'lb')
 parser.add_argument('--split', type=str, help='iid/noniid', default = 'iid')
 parser.add_argument('--iterations', type=int, help='iterations', default = 3)
 parser.add_argument('--device', type=str, help='cpu/cuda', default = 'cpu')
@@ -24,7 +24,7 @@ split = args.split
 iterations = args.iterations
 device = args.device
 
-assert bench in ['helm','lb','mmlu','alpaca','mmlu_fields']
+assert bench in ['helm','lb','mmlu','alpaca','mmlu_fields', 'icl_ct']
 assert split in ['iid','noniid']
 assert iterations>0
 
@@ -114,7 +114,26 @@ elif bench == 'mmlu_fields':
     else:
         set_of_rows = [list(range(40))]
     print(len(set_of_rows[0]), len(data['models']))
+
+elif bench == 'icl_ct':
+    #data
+    with open('data/icl_ct.pickle', 'rb') as handle:
+        data = pickle.load(handle)
+ 
+    #scenarios
+    scenarios = icl_ct_scenarios
     
+    #split
+    if split == 'iid':
+        set_of_rows = [list(range(0,len(data['models']),4)),
+                       list(range(1,len(data['models'])+1,4)),
+                       list(range(2,len(data['models'])+2,4)),
+                       list(range(3,len(data['models'])+3,4))]
+        
+    else:
+        set_of_rows = [list(range(int(len(data['models'])/4))),]
+        
+    print(len(set_of_rows[0]), len(data['models'])) 
 else:
     raise NotImplementedError
 chosen_scenarios = list(scenarios.keys())

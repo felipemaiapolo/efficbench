@@ -31,7 +31,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
     - A dictionary containing the updated results.
     """
     
-    assert bench in ['irt_helm', 'irt_lb', 'irt_lb_perf', 'irt_mmlu', 'irt_alpaca', 'irt_mmlu_fields']
+    assert bench in ['irt_helm', 'irt_lb', 'irt_lb_perf', 'irt_mmlu', 'irt_alpaca', 'irt_mmlu_fields', 'irt_icl_ct']
     assert np.mean([s in ['random', 'anchor', 'anchor-irt', 'adaptive'] for s in sampling_names]) == 1
     
     number_items = [10, 30, 60, 100]  # Number of items to consider in evaluations
@@ -104,11 +104,8 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
             # Train IRT model for the current dimension (D)
             model_name = f'models/{bench}/rows-{rows_to_hide_str}_D-{D}_scenario-{scenario_name}_val/'
             # Load trained IRT model parameters
-            try:
-                A, B, Theta = load_irt_parameters(model_name)
-            except:
-                train_irt_model(dataset_name, model_name, D, lr, epochs, device)
-                A, B, Theta = load_irt_parameters(model_name)
+            train_irt_model(dataset_name, model_name, D, lr, epochs, device)
+            A, B, Theta = load_irt_parameters(model_name)
             # Determine seen and unseen items for validation
             seen_items = list(range(0, responses_train.shape[1], 2))
             unseen_items = list(range(1, responses_train.shape[1], 2))
@@ -159,11 +156,8 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         create_irt_dataset(responses_train, dataset_name)
         model_name = f'models/{bench}/row-{rows_to_hide_str}_D-validate_scenario-{scenario_name}/'
         # Load the final IRT model
-        try:
-                A, B, Theta = load_irt_parameters(model_name)
-        except:
-                train_irt_model(dataset_name, model_name, D, lr, epochs, device)
-                A, B, Theta = load_irt_parameters(model_name)
+        train_irt_model(dataset_name, model_name, D, lr, epochs, device)
+        A, B, Theta = load_irt_parameters(model_name)
                 
         print("\niv) sampling")
         item_weights_dic, seen_items_dic, unseen_items_dic, sampling_time_dic = {}, {}, {}, {}
