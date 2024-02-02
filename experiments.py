@@ -210,6 +210,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
             dic['seen_items'] = seen_items_dic
             dic['scenarios_position'] = scenarios_position
             dic['subscenarios_position'] = subscenarios_position
+            dic['opt_lambds'] = opt_lambds
             dic['A'] = A
             dic['B'] = B
             with open(f'results/samples_{bench[4:]}_iterations-{iterations}.pickle', 'wb') as handle:
