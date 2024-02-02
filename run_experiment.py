@@ -31,7 +31,7 @@ assert iterations>0
 # Defining other parameters
 
 Ds = [2, 5, 10, 15, 20]
-sampling_names = ['random', 'anchor', 'anchor-irt', 'adaptive'] #'random', 'anchor', 'anchor-irt', 
+sampling_names = ['random', 'anchor', 'anchor-irt', 'adaptive'] 
 
 scenario_name = 'full' #we are evaluating all scenarios at once (this is just a nomination)
 
