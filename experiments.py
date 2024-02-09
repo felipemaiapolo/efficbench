@@ -31,7 +31,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
     - A dictionary containing the updated results.
     """
     
-    assert bench in ['irt_helm', 'irt_lb', 'irt_lb_perf', 'irt_mmlu', 'irt_alpaca', 'irt_mmlu_fields', 'irt_icl_ct']
+    assert bench in ['irt_helm', 'irt_lb', 'irt_lb_perf', 'irt_mmlu', 'irt_alpaca', 'irt_mmlu_fields', 'irt_icl_ct', 'irt_icl_ct_2']
     assert np.mean([s in ['random', 'anchor', 'anchor-irt', 'adaptive'] for s in sampling_names]) == 1
     
     number_items = [10, 30, 60, 100]  # Number of items to consider in evaluations

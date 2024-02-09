@@ -250,6 +250,8 @@ icl_ct_scenarios = {'7b_instruction_tuned':['7b_instruction_tuned'] ,
                     '65b_vanilla': ['65b_vanilla',]
 }
 
+icl_ct_2_scenarios = {'icl_ct_2':['icl_ct_2']}
+
 
 #### plots
 #style = {"alpha":.25, "linewidth":1.25, "markeredgewidth":1, "elinewidth":1.5, "capsize":3, "linestyle":''}
@@ -312,6 +314,7 @@ def load_scores(bench, split):
     elif bench=='helm':scenarios = helm_scenarios
     elif bench=='alpaca':scenarios = alpaca_scenarios
     elif bench=='mmlu_fields':scenarios = {'mmlu':lb_scenarios['mmlu']}
+    elif bench=='icl_ct_2':scenarios = icl_ct_2_scenarios
     else: raise NotImplementedError
     
     scenarios_position, subscenarios_position = prepare_data(scenarios, scenarios, data2)

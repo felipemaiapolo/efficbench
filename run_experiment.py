@@ -14,7 +14,7 @@ from utils import *
 parser = argparse.ArgumentParser(description='Example script with named arguments.')
 
 parser.add_argument('--bench', type=str, help='Benchmark (helm, lb, mmlu, alpaca, icl_ct)', default = 'lb')
-parser.add_argument('--split', type=str, help='iid/noniid', default = 'iid')
+parser.add_argument('--split', type=str, help='iid/noniid/noniid2', default = 'iid')
 parser.add_argument('--iterations', type=int, help='iterations', default = 3)
 parser.add_argument('--device', type=str, help='cpu/cuda', default = 'cpu')
 
@@ -24,14 +24,14 @@ split = args.split
 iterations = args.iterations
 device = args.device
 
-assert bench in ['helm','lb','mmlu','alpaca','mmlu_fields', 'icl_ct']
-assert split in ['iid','noniid']
+assert bench in ['helm','lb','mmlu','alpaca','mmlu_fields', 'icl_ct', 'icl_ct_2']
+assert split in ['iid','noniid','noniid2']
 assert iterations>0
 
 # Defining other parameters
 
 Ds = [2, 5, 10, 15, 20]
-sampling_names = ['random', 'anchor', 'anchor-irt', 'adaptive'] 
+sampling_names = ['random', 'anchor', 'anchor-irt']#, 'adaptive'] 
 
 scenario_name = 'full' #we are evaluating all scenarios at once (this is just a nomination)
 
@@ -134,6 +134,27 @@ elif bench == 'icl_ct':
         set_of_rows = [list(range(int(len(data['models'])/4))),]
         
     print(len(set_of_rows[0]), len(data['models'])) 
+    
+elif bench == 'icl_ct_2':
+    #data
+    with open('data/icl_ct_2.pickle', 'rb') as handle:
+        data = pickle.load(handle)
+ 
+    #scenarios
+    scenarios = icl_ct_2_scenarios
+    
+    #split
+    if split == 'iid':
+        set_of_rows = [list(range(0,len(data['models']),int(len(data['models'])/360+1)))]
+        
+    elif split == 'noniid': #changes in prompt (instruction)
+        set_of_rows = [[i for i,m in enumerate(data['models']) if m.split('-')[1][0] in ['3']]]
+     
+    else: #changes in model size (biggest models go to test)
+        set_of_rows = [[i for i,m in enumerate(data['models']) if m.split('-')[0][:3] in ['65b']]]
+            
+    print(len(set_of_rows[0]), len(data['models'])) 
+    
 else:
     raise NotImplementedError
 chosen_scenarios = list(scenarios.keys())
