@@ -63,13 +63,8 @@ def get_random(scenarios_choosen, scenarios, number_item, subscenarios_position,
             seen_items_scenario += random.sample(subscenarios_position[scenario][sub], k=number_items_sub[i])
             i += 1
 
-        if scenario == 'civil_comments': #cc it needs weighting (toxic/non-toxic needs to have the same weight)
-            norm_balance_weights = balance_weights[seen_items_scenario]
-            norm_balance_weights /= norm_balance_weights.sum()
-            item_weights[scenario] =  norm_balance_weights
-        else:
-            item_weights[scenario] = np.ones(number_item)/number_item
-            
+        item_weights[scenario] = np.ones(number_item)/number_item
+  
         seen_items += seen_items_scenario
         
     # Determine the unseen items by finding all item indices that are not in the seen items list.

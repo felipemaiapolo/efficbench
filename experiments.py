@@ -31,7 +31,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
     - A dictionary containing the updated results.
     """
     
-    assert bench in ['irt_helm', 'irt_lb', 'irt_lb_perf', 'irt_mmlu', 'irt_alpaca', 'irt_mmlu_fields', 'irt_icl_ct', 'irt_icl_ct_2']
+    assert bench in ['irt_helm', 'irt_helm_lite', 'irt_lb', 'irt_lb_perf', 'irt_mmlu', 'irt_alpaca', 'irt_mmlu_fields', 'irt_icl_ct', 'irt_icl_ct_2']
     assert np.mean([s in ['random', 'anchor', 'anchor-irt', 'adaptive'] for s in sampling_names]) == 1
     
     number_items = [10, 30, 60, 100]  # Number of items to consider in evaluations
@@ -52,20 +52,14 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         scenarios_position, subscenarios_position = prepare_data(chosen_scenarios, scenarios, data)
         scores = create_responses(chosen_scenarios, scenarios, data)
         
-        balance_weights = np.ones(scores.shape[1]) #for scenario in ['civil_comments', 'mmlu'], some items need to be downweighted, for other scenarios not
-        
-        #if any change is made below, we will also need to update 'load_scores' in utils.py
-        if 'civil_comments' in chosen_scenarios:
-            balance_weights[scenarios_position['civil_comments']] = scores[:,scenarios_position['civil_comments']].max(axis=0)
-            scores[:,scenarios_position['civil_comments']] = (scores[:,scenarios_position['civil_comments']]>0).astype(float)
-            assert (balance_weights[scenarios_position['civil_comments']]==0).sum()==0 #verifying that no item had weight 0 (the output should be zero). Otherwise we would not be able to recover the weights in this way
-            assert abs(balance_weights[scenarios_position['civil_comments']].mean()-1)<1e-3 #verifying if the weights respect density ratio property
-        if 'mmlu' in chosen_scenarios:
-            N = len(scenarios_position['mmlu'])
-            n_sub = len(scenarios['mmlu'])
-            for sub in scenarios['mmlu']:
-                n_i = len(subscenarios_position['mmlu'][sub])
-                balance_weights[subscenarios_position['mmlu'][sub]] = N/(n_sub*n_i)             
+        # Balance weights
+        balance_weights = np.ones(scores.shape[1]) 
+        for scenario in chosen_scenarios:
+            N = len(scenarios_position[scenario])
+            n_sub = len(scenarios[scenario])
+            for sub in scenarios[scenario]:
+                n_i = len(subscenarios_position[scenario][sub])
+                balance_weights[subscenarios_position[scenario][sub]] = N/(n_sub*n_i)  
         
         # Create training and test sets by hiding specific rows
         scores_train = scores[[i for i in range(scores.shape[0]) if i not in rows_to_hide]]

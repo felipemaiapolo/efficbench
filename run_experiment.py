@@ -7,6 +7,7 @@ from experiments import *
 from utils import *
 
 #python run_experiment.py --bench 'lb' --split 'iid' --iterations 5 --device 'cuda'
+#python run_experiment.py --bench 'helm_lite' --split 'noniid' --iterations 5 --device 'cuda'
 
 # ## Definitions
 
@@ -14,7 +15,7 @@ from utils import *
 parser = argparse.ArgumentParser(description='Example script with named arguments.')
 
 parser.add_argument('--bench', type=str, help='Benchmark (helm, lb, mmlu, alpaca, icl_ct)', default = 'lb')
-parser.add_argument('--split', type=str, help='iid/noniid/noniid2', default = 'iid')
+parser.add_argument('--split', type=str, help='iid/noniid/noniid2/noniid3', default = 'iid')
 parser.add_argument('--iterations', type=int, help='iterations', default = 3)
 parser.add_argument('--device', type=str, help='cpu/cuda', default = 'cpu')
 
@@ -24,7 +25,7 @@ split = args.split
 iterations = args.iterations
 device = args.device
 
-assert bench in ['helm','lb','mmlu','alpaca','mmlu_fields', 'icl_ct', 'icl_ct_2']
+assert bench in ['helm','helm_lite','lb','mmlu','alpaca','mmlu_fields', 'icl_ct', 'icl_ct_2']
 assert split in ['iid','noniid','noniid2']
 assert iterations>0
 
@@ -75,6 +76,42 @@ elif bench == 'helm':
                        [4,12,13], #anthropic+microsoft
                        [14,15,16,17,18,19,20,21,22], #openai
                        [23,24,25,26,27]] #together
+    print(len(set_of_rows[0]), len(data['models']))
+
+elif bench == 'helm_lite':
+    #data
+    with open('data/helm_lite.pickle', 'rb') as handle:
+        data = pickle.load(handle)
+        
+    #scenarios
+    scenarios = helm_lite_scenarios
+    
+    #split
+    if split == 'iid':
+        set_of_rows = [[0,11,22],
+                       [1,12,23], 
+                       [2,13,24], 
+                       [3,14,25],
+                       [4,15,26],
+                       [5,16,27],
+                       [6,17,28], 
+                       [7,18,29],
+                       [8,19],
+                       [9,20],
+                       [10,21]] 
+    else:
+        set_of_rows = [[0,1], #AI: Yi
+                       [2,3,4], #AlephAlpha_luminous
+                       [5,6], #ai21_j2
+                       [7,8,9,10], #anthropic_claude
+                       [11,12],#cohere
+                       [13,14], #google
+                       [15,16,17,18], #llama
+                       [19,20], #mistral ai
+                       [21,22,23,24,25], #openai
+                       [26,27], #TII/UAE
+                       [28,29]] #writer
+                      
     print(len(set_of_rows[0]), len(data['models']))
     
 elif bench == 'alpaca':
