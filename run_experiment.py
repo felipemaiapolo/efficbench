@@ -154,7 +154,7 @@ elif bench == 'icl_templates':
         set_of_rows = [[i for i,m in enumerate(data['models']) if np.sum([t in m for t in temp])>0] for temp in templates]
      
     elif split == 'noniid2': #size
-        sizes = [['7b', '13b'], ['30b', '65b']]
+        sizes = [['65b']] #[['7b', '13b'], ['30b', '65b']]
         set_of_rows = [[i for i,m in enumerate(data['models']) if np.sum([t in m for t in size])>0] for size in sizes]
         
     elif split == 'noniid3': #same vs cross instr
