@@ -6,7 +6,7 @@ from scipy import stats
 from experiments import *
 from utils import *
 
-#python run_experiment.py --bench 'lb' --split 'iid' --iterations 5 --device 'cuda'
+#python run_experiment.py --bench 'mmlu' --split 'iid' --iterations 5 --device 'cuda'
 #python run_experiment.py --bench 'helm_lite' --split 'noniid' --iterations 5 --device 'cuda'
 
 # ## Definitions
@@ -14,7 +14,7 @@ from utils import *
 # User input
 parser = argparse.ArgumentParser(description='Example script with named arguments.')
 
-parser.add_argument('--bench', type=str, help='Benchmark (helm, lb, mmlu, alpaca, icl_ct)', default = 'lb')
+parser.add_argument('--bench', type=str, help='Benchmark (helm_lite, lb, mmlu, alpaca, icl_templates)', default = 'lb')
 parser.add_argument('--split', type=str, help='iid/noniid/noniid2/noniid3', default = 'iid')
 parser.add_argument('--iterations', type=int, help='iterations', default = 3)
 parser.add_argument('--device', type=str, help='cpu/cuda', default = 'cpu')
@@ -25,13 +25,13 @@ split = args.split
 iterations = args.iterations
 device = args.device
 
-assert bench in ['helm','helm_lite','lb','mmlu','alpaca','mmlu_fields', 'icl_ct', 'icl_ct_2']
-assert split in ['iid','noniid','noniid2']
+assert bench in ['helm_lite','lb','mmlu','alpaca','mmlu_fields','icl_templates']
+assert split in ['iid','noniid','noniid2','noniid3']
 assert iterations>0
 
 # Defining other parameters
 
-Ds = [2, 5, 10, 15, 20]
+Ds = [2, 5, 10, 15]
 sampling_names = ['random', 'anchor', 'anchor-irt']#, 'adaptive'] 
 
 scenario_name = 'full' #we are evaluating all scenarios at once (this is just a nomination)
@@ -53,29 +53,6 @@ if bench in ['lb','mmlu']:
     else:
         set_of_rows = [list(range(int(len(data['models'])/4))),]
         
-    print(len(set_of_rows[0]), len(data['models']))
-
-elif bench == 'helm':
-    #data
-    with open('data/helm.pickle', 'rb') as handle:
-        data = pickle.load(handle)
-        
-    #scenarios
-    scenarios = helm_scenarios
-    
-    #split
-    if split == 'iid':
-        set_of_rows = [[0,5,10,15,20,25], 
-                       [1,6,11,16,21,26], 
-                       [2,7,12,17,22,27], 
-                       [3,8,13,18,23],
-                       [4,9,14,19,24]] 
-    else:
-        set_of_rows = [[0,1,2,3], #ai21
-                       [5,6,7,8,9,10,11], #cohere
-                       [4,12,13], #anthropic+microsoft
-                       [14,15,16,17,18,19,20,21,22], #openai
-                       [23,24,25,26,27]] #together
     print(len(set_of_rows[0]), len(data['models']))
 
 elif bench == 'helm_lite':
@@ -152,44 +129,41 @@ elif bench == 'mmlu_fields':
         set_of_rows = [list(range(40))]
     print(len(set_of_rows[0]), len(data['models']))
 
-elif bench == 'icl_ct':
+elif bench == 'icl_templates':
     #data
-    with open('data/icl_ct.pickle', 'rb') as handle:
+    with open('data/icl_templates.pickle', 'rb') as handle:
         data = pickle.load(handle)
  
     #scenarios
-    scenarios = icl_ct_scenarios
+    scenarios = icl_templates_scenarios
     
     #split
     if split == 'iid':
-        set_of_rows = [list(range(0,len(data['models']),4)),
-                       list(range(1,len(data['models'])+1,4)),
-                       list(range(2,len(data['models'])+2,4)),
-                       list(range(3,len(data['models'])+3,4))]
+        import random
+        random.seed(42) #0
+        list1 = random.sample(range(len(data['models'])), int(len(data['models'])/2))
+        list2 = [i for i in range(len(data['models'])) if i not in list1]
+        set_of_rows = [list1, list2]
         
-    else:
-        set_of_rows = [list(range(int(len(data['models'])/4))),]
-        
-    print(len(set_of_rows[0]), len(data['models'])) 
-    
-elif bench == 'icl_ct_2':
-    #data
-    with open('data/icl_ct_2.pickle', 'rb') as handle:
-        data = pickle.load(handle)
- 
-    #scenarios
-    scenarios = icl_ct_2_scenarios
-    
-    #split
-    if split == 'iid':
-        set_of_rows = [list(range(0,len(data['models']),int(len(data['models'])/360+1)))]
-        
-    elif split == 'noniid': #changes in prompt (instruction)
-        set_of_rows = [[i for i,m in enumerate(data['models']) if m.split('-')[1][0] in ['3']]]
+    elif split == 'noniid': #instruction
+        templates = [['GPT_3_style','MNLI_crowdsource','always_sometimes_never',
+                      'based_on_the_previous_passage','can_we_infer','claim_true_false_inconclusive',
+                      'consider_always_sometimes_never','does_it_follow_that'],['does_this_imply',
+                      'guaranteed_possible_impossible', 'guaranteed_true', 'justified_in_saying',
+                      'must_be_true','should_assume','take_the_following_as_truth']]
+        set_of_rows = [[i for i,m in enumerate(data['models']) if np.sum([t in m for t in temp])>0] for temp in templates]
      
-    else: #changes in model size (biggest models go to test)
-        set_of_rows = [[i for i,m in enumerate(data['models']) if m.split('-')[0][:3] in ['65b']]]
-            
+    elif split == 'noniid2': #size
+        sizes = [['7b', '13b'], ['30b', '65b']]
+        set_of_rows = [[i for i,m in enumerate(data['models']) if np.sum([t in m for t in size])>0] for size in sizes]
+        
+    elif split == 'noniid3': #same vs cross instr
+        cross = [['same_instr'],['cross_instr']]
+        set_of_rows = [[i for i,m in enumerate(data['models']) if np.sum([t in m for t in cr])>0] for cr in cross]
+    
+    else:
+        raise NotImplementedError
+    
     print(len(set_of_rows[0]), len(data['models'])) 
     
 else:
@@ -198,7 +172,7 @@ chosen_scenarios = list(scenarios.keys())
 
 
 # ## Results
-results_full, accs_full, sampling_time_dic = evaluate_scenarios(data, scenario_name, chosen_scenarios, scenarios, set_of_rows, Ds, iterations, device, bench='irt_'+bench, sampling_names = sampling_names)
+results_full, accs_full, sampling_time_dic = evaluate_scenarios(data, scenario_name, chosen_scenarios, scenarios, set_of_rows, Ds, iterations, device, bench='irt_'+bench, split=split, sampling_names = sampling_names)
 
 with open(f'results/results_{bench}_split-{split}_iterations-{iterations}.pickle', 'wb') as handle:
     pickle.dump(results_full, handle, protocol=pickle.HIGHEST_PROTOCOL)
