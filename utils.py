@@ -133,6 +133,38 @@ def create_responses(chosen_scenarios, scenarios, data):
     responses = np.hstack(responses)
     return responses
 
+def prepare_and_split_data(chosen_scenarios, scenarios, data, rows_to_hide):
+    """
+    Prepares data based on chosen scenarios and splits it into training and testing sets.
+    
+    Parameters:
+    - chosen_scenarios: List of scenarios to consider.
+    - scenarios: Dictionary mapping scenarios to their subscenarios.
+    - data: The data to be used for creating responses and weights.
+    - rows_to_hide: Indices of rows in the data to be excluded from the training set and used for testing.
+    
+    Returns:
+    - scores_train: The training set, excluding rows specified by rows_to_hide.
+    - scores_test: The testing set, including only rows specified by rows_to_hide.
+    - balance_weights: Array of weights used to balance the training data.
+    """
+    # Prepare data and scenarios
+    scenarios_position, subscenarios_position = prepare_data(chosen_scenarios, scenarios, data)
+    scores = create_responses(chosen_scenarios, scenarios, data) 
+    # Balance weights
+    balance_weights = np.ones(scores.shape[1]) 
+    for scenario in chosen_scenarios:
+        N = len(scenarios_position[scenario])
+        n_sub = len(scenarios[scenario])
+        for sub in scenarios[scenario]:
+            n_i = len(subscenarios_position[scenario][sub])
+            balance_weights[subscenarios_position[scenario][sub]] = N/(n_sub*n_i)  
+    # Create training and test sets by hiding specific rows
+    scores_train = scores[[i for i in range(scores.shape[0]) if i not in rows_to_hide]]
+    scores_test = scores[rows_to_hide]
+        
+    return scores_train, scores_test, balance_weights, scenarios_position, subscenarios_position
+    
 helm_lite_scenarios = {'commonsense:dataset=openbookqa,method=multiple_choice_joint,':['commonsense:dataset=openbookqa,method=multiple_choice_joint,'],
                        'gsm:':['gsm:'],
                        'med_qa:':['med_qa:'],

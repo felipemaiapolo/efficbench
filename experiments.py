@@ -49,21 +49,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
         print(f"\nEvaluating models {rows_to_hide}")
         
         # Prepare data and scenarios
-        scenarios_position, subscenarios_position = prepare_data(chosen_scenarios, scenarios, data)
-        scores = create_responses(chosen_scenarios, scenarios, data)
-        
-        # Balance weights
-        balance_weights = np.ones(scores.shape[1]) 
-        for scenario in chosen_scenarios:
-            N = len(scenarios_position[scenario])
-            n_sub = len(scenarios[scenario])
-            for sub in scenarios[scenario]:
-                n_i = len(subscenarios_position[scenario][sub])
-                balance_weights[subscenarios_position[scenario][sub]] = N/(n_sub*n_i)  
-        
-        # Create training and test sets by hiding specific rows
-        scores_train = scores[[i for i in range(scores.shape[0]) if i not in rows_to_hide]]
-        scores_test = scores[rows_to_hide]
+        scores_train, scores_test, balance_weights, scenarios_position, subscenarios_position = prepare_and_split_data(chosen_scenarios, scenarios, data, rows_to_hide)
         responses_train = np.zeros(scores_train.shape)
         responses_test = np.zeros(scores_test.shape)
 
@@ -197,7 +183,7 @@ def evaluate_scenarios(data, scenario_name, chosen_scenarios,
                     item_weights_dic[sampling_name][number_item], seen_items_dic[sampling_name][number_item], unseen_items_dic[sampling_name][number_item], sampling_time_dic[sampling_name][number_item] = samples[i]
                 
         #saving points
-        if rows_to_hide==set_of_rows[0] and split=='iid': 
+        if rows_to_hide==set_of_rows[0] and split=='iid': # we impose rows_to_hide==set_of_rows[0] because in AlpacaEval we do K-fold CV so there are multiple training/test sets
             dic = {}
             dic['item_weights'] = item_weights_dic
             dic['seen_items'] = seen_items_dic
