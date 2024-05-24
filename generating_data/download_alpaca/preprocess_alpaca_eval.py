@@ -9,7 +9,7 @@ from typing import List, Dict, Optional
 
 RAW_DATA_PATH = "./alpaca_eval/results"
 CLONE_PATH = "./alpaca_eval"
-ALPACA_EVAL_VERSION = "1.0"
+ALPACA_EVAL_VERSION = "2.0"
 RESULTS_FOLDERS = {"1.0": "alpaca_eval_gpt4",
                    "2.0": "weighted_alpaca_eval_gpt4_turbo",
                    }
@@ -83,32 +83,38 @@ def main() -> None:
                             }
 
     # Exract data from dictionary; shift data; log missing data
+    skip_models = []
     for i, _ in enumerate(all_data):
         model_correctness = []
         missing_data = []
 
-        for j, _ in enumerate(all_data[i]):
-            # Make sure that all data points are aligned:
-            assert all_data[i][j]["instruction"] == instructions[j]
-            try:
-                correctness = all_data[i][j]["preference"] - SHIFT_VALUE
-                missing = 0
-            except TypeError:
-                correctness = 0
-                missing = 1
-
-            missing_data.append(missing)
-            model_correctness.append(correctness)
+        if len(all_data[i])==len(instructions):
+            for j, _ in enumerate(all_data[i]):
+                # Make sure that all data points are aligned:
+                assert all_data[i][j]["instruction"] == instructions[j]
+                try:
+                    correctness = all_data[i][j]["preference"] - SHIFT_VALUE
+                    missing = 0
+                except TypeError:
+                    correctness = 0
+                    missing = 1
         
-        data_final[version]["correctness"].append(model_correctness)
-        data_final[version]["missing_data"].append(missing_data)
+                missing_data.append(missing)
+                model_correctness.append(correctness)
+            
+            data_final[version]["correctness"].append(model_correctness)
+            data_final[version]["missing_data"].append(missing_data)
+        else:
+            skip_models.append((i, models[i],len(all_data[i])))
+            models.remove(models[i])
 
     data_final[version]["correctness"] = np.array(data_final[version]["correctness"]).T
     data_final[version]["missing_data"] = np.array(data_final[version]["missing_data"]).T
 
     alpaca_eval_results = {"data": data_final,
-                        "models": models,
-                        "instructions": instructions}
+                           "models": models,
+                           "skip":skip_models,
+                           "instructions": instructions}
 
     # Order data according to last commit date
     try:
@@ -121,12 +127,13 @@ def main() -> None:
     dates = [dates[model] for model in alpaca_eval_results['models']]
     order = np.argsort(np.array(dates))[::-1]
 
+
     alpaca_eval_results['data'][version]['correctness'] = alpaca_eval_results['data'][version]['correctness'][:,order]
     alpaca_eval_results['models'] = np.array(alpaca_eval_results['models'])[order].tolist()
 
     if ALPACA_EVAL_VERSION == '2.0':
         # Deleting the reference model out of the list
-        benchmark_ind = np.argmax(alpaca_eval_results['data'][version]['correctness'].mean(axis=0))
+        benchmark_ind = np.argmax([m=='gpt4_1106_preview' for m in data['models']])
         alpaca_eval_results['data'][version]['correctness'] = np.delete(alpaca_eval_results['data'][version]['correctness'], benchmark_ind, axis=1)
         alpaca_eval_results['models'].pop(benchmark_ind)
 
