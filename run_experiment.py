@@ -22,8 +22,12 @@ def get_data(bench, split):
         #split
         if split == 'iid':
             set_of_rows = [list(range(0,len(data['models']),4))]
-        else:
+        elif split == 'noniid':
             set_of_rows = [list(range(int(len(data['models'])/4))),]
+        elif split == 'noniid2':
+            set_of_rows = [list(range(200))]
+        elif split == 'noniid3':
+            set_of_rows = [list(range(300))] 
 
         print(len(set_of_rows[0]), len(data['models']))
 
@@ -43,7 +47,7 @@ def get_data(bench, split):
                            [3,14,25],
                            [4,15,26],
                            [5,16,27],
-                           [6,17,28], 
+                           [6,17,28],
                            [7,18,29],
                            [8,19],
                            [9,20],
@@ -77,9 +81,13 @@ def get_data(bench, split):
                            list(range(1,len(data['models'])+1,4)),
                            list(range(2,len(data['models'])+2,4)),
                            list(range(3,len(data['models'])+3,4))]
-        else:
+        elif split == 'noniid':
             set_of_rows = [list(range(int(len(data['models'])/4))),]
-
+        elif split == 'noniid2':
+            set_of_rows = [list(range(50))]
+        elif split == 'noniid3':
+            set_of_rows = [list(range(75))]
+ 
         print(len(set_of_rows[0]), len(data['models']))
 
     # Loading data
