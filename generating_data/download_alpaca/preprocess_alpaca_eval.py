@@ -133,7 +133,7 @@ def main() -> None:
 
     if ALPACA_EVAL_VERSION == '2.0':
         # Deleting the reference model out of the list
-        benchmark_ind = np.argmax([m=='gpt4_1106_preview' for m in data['models']])
+        benchmark_ind = np.argmax([m=='gpt4_1106_preview' for m in alpaca_eval_results['models']])
         alpaca_eval_results['data'][version]['correctness'] = np.delete(alpaca_eval_results['data'][version]['correctness'], benchmark_ind, axis=1)
         alpaca_eval_results['models'].pop(benchmark_ind)
 
