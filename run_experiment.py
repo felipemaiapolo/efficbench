@@ -174,7 +174,7 @@ if __name__ == "__main__":
 
     # Defining other parameters
     Ds = [2, 5, 10, 15]
-    sampling_names = ['random', 'anchor', 'anchor-irt']#, 'adaptive'] 
+    sampling_names = ['random', 'anchor', 'anchor-irt']# or ['adaptive'] 
 
     scenario_name = 'full' #we are evaluating all scenarios at once (this is just a nomination)
 
